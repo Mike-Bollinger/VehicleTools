@@ -1,0 +1,237 @@
+{
+ "mission": {
+  "name": "SCM Marker Template",
+  "comment": "07.06.2024 09:55:01",
+  "devices": [
+   {
+    "serialNumber": "SUSDA14_",
+    "name": "SCM",
+    "type": "DEVICE_SURFACE",
+    "mapTracesColor": "#ff000000",
+    "mapTextColor": "#ff000000",
+    "paths": [
+     {
+      "name": "Path2",
+      "stages": [
+       {
+        "name": "WP1",
+        "latitude": 33.5108191242046,
+        "longitude": -77.890631596327935,
+        "navigation": {
+         "velocity": 1,
+         "altitude": 3,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 180
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "Path3",
+      "stages": [
+       {
+        "name": "WP2",
+        "latitude": 33.51222373127527,
+        "longitude": -77.890722126703665,
+        "navigation": {
+         "velocity": 1,
+         "altitude": 3,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 180
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "Path4",
+      "stages": [
+       {
+        "name": "WP3",
+        "latitude": 33.510141541438415,
+        "longitude": -77.894063878398953,
+        "navigation": {
+         "velocity": 1,
+         "altitude": 3,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 180
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "Path5",
+      "stages": [
+       {
+        "name": "WP4",
+        "latitude": 33.509759513320354,
+        "longitude": -77.895285043689626,
+        "navigation": {
+         "velocity": 1,
+         "altitude": 3,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 180
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "Path6",
+      "stages": [
+       {
+        "name": "WP5",
+        "latitude": 33.510965026362264,
+        "longitude": -77.8966277576811,
+        "navigation": {
+         "velocity": 1,
+         "altitude": 3,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 180
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "Path7",
+      "stages": [
+       {
+        "name": "WP6",
+        "latitude": 33.505794704192937,
+        "longitude": -77.890792545573859,
+        "navigation": {
+         "velocity": 1,
+         "altitude": 3,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 180
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "Path8",
+      "stages": [
+       {
+        "name": "WP7",
+        "latitude": 33.512374022695774,
+        "longitude": -77.898449537870263,
+        "navigation": {
+         "velocity": 1,
+         "altitude": 3,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 180
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "Path9",
+      "stages": [
+       {
+        "name": "WP8",
+        "latitude": 33.505956672112518,
+        "longitude": -77.896807972108775,
+        "navigation": {
+         "velocity": 1,
+         "altitude": 3,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 180
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "Path10",
+      "stages": [
+       {
+        "name": "WP9",
+        "latitude": 33.511127260750662,
+        "longitude": -77.90264100244795,
+        "navigation": {
+         "velocity": 1,
+         "altitude": 3,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 180
+         }
+        }
+       }
+      ]
+     }
+    ],
+    "home": {},
+    "maxDepth": 300,
+    "payloadKeys": [
+     0
+    ]
+   }
+  ],
+  "dictionary": {
+   "messages": [
+    {
+     "text": "GOING UP",
+     "key": {
+      "value": "1"
+     }
+    },
+    {
+     "text": "GOING DOWN",
+     "key": {
+      "value": "2"
+     }
+    },
+    {
+     "text": "ALL IS GOOD",
+     "key": {
+      "value": "3"
+     }
+    },
+    {
+     "text": "ROGER",
+     "key": {
+      "value": "4"
+     }
+    }
+   ]
+  },
+  "racamCelerity": 1400,
+  "editDatetime": 1717769146,
+  "store": {
+   "0": {
+    "name": "RACAM_NewDevice1",
+    "racam": {
+     "modem": {
+      "frequency": 18000,
+      "gain": -3,
+      "period": 3
+     },
+     "localize": {},
+     "celerity": 1400,
+     "transducerDepth": 3
+    }
+   }
+  }
+ },
+ "devicesui": [
+  {
+   "mapColor": "#ffff0000"
+  }
+ ],
+ "storeui": {
+  "0": {}
+ }
+}
