@@ -1,10 +1,10 @@
 {
  "mission": {
   "name": "SCM Marker Template",
-  "comment": "07.06.2024 09:55:01",
+  "comment": "11.06.2024 09:55:01",
   "devices": [
    {
-    "serialNumber": "SUSDA14_",
+    "serialNumber": "SUSDA14_2404001",
     "name": "SCM",
     "type": "DEVICE_SURFACE",
     "mapTracesColor": "#ff000000",
