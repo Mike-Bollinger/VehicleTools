@@ -40,7 +40,6 @@ def process_data(data):
     filtered_data['Depth m'] = filtered_data['Depth m'] * -1
     filtered_data['Altitude m'] = filtered_data['Bottom m']
 
-
     return filtered_data
 
 
