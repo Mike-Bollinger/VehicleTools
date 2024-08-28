@@ -35,6 +35,12 @@ def process_data(data):
     # Convert Speed from m/s to knots
     filtered_data['Speed knots'] = filtered_data['Speed m/s'] * 1.94384
 
+    # Convert Depth to Negative
+    filtered_data['Water Depth m'] = (filtered_data['Depth m'] + filtered_data['Bottom m']) * -1
+    filtered_data['Depth m'] = filtered_data['Depth m'] * -1
+    filtered_data['Altitude m'] = filtered_data['Bottom m']
+
+
     return filtered_data
 
 
@@ -91,7 +97,7 @@ def main():
 
         # Dropdown for second attribute
         y2_var = StringVar(root)
-        y2_var.set('Bottom m')  # default value
+        y2_var.set('Altitude m')  # default value
         y2_label = Label(root, text="Y2 Attribute:")
         y2_label.pack()
         y2_menu = OptionMenu(root, y2_var, *filtered_data.columns)
@@ -99,7 +105,7 @@ def main():
 
         # Dropdown for third attribute
         y3_var = StringVar(root)
-        y3_var.set('Speed knots')  # default value
+        y3_var.set('Water Depth m')  # default value
         y3_label = Label(root, text="Y3 Attribute:")
         y3_label.pack()
         y3_menu = OptionMenu(root, y3_var, *filtered_data.columns)
