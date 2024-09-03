@@ -22,7 +22,7 @@ class ImageSlideshow(tk.Tk):
         self.title("Image Slideshow")
         self.slideshow_interval = slideshow_interval
         self.thumbnail_size = thumbnail_size
-        self.data_files = []
+        self.image_files = []
         self.current_index = 0
 
         # Initialize attributes
