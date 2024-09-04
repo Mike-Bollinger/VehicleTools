@@ -1,25 +1,13 @@
-#Author: Mike Bollinger with help from ChatGPT 3.5
-    # Image viewer to increment through a folder of images to get a quick look at the results of an image aquisition system.
-    #This is intended to be a quick look tool as of v2. more in depth analysis should be done in another viewer.
-    # July 07, 2024
-    #
-    ######################################################################
-
-# UPDATED v1 06.28.2024
-#This is the first version - Mike Bollinger & ChatGPT
-# UPDATED v2 07.08.2024
-#Updated to add a slider functionality to quickly scroll through images and also maintain play button functionality.
-
 import os
 import csv
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 
 class ImageSlideshow(tk.Tk):
-    def __init__(self, slideshow_interval=0.1, thumbnail_size=(800, 600)):
+    def __init__(self, slideshow_interval=0.1, thumbnail_size=(1000, 650)):
         super().__init__()
-        self.title("Image Slideshow")
+        self.title("Image QAQCer")
         self.slideshow_interval = slideshow_interval
         self.thumbnail_size = thumbnail_size
         self.image_files = []
@@ -29,9 +17,19 @@ class ImageSlideshow(tk.Tk):
         self.is_playing = False
         self.slideshow_id = None
 
-        # Create widgets
-        self.image_label = tk.Label(self)
-        self.image_label.pack()
+        # Create a frame for the image and text
+        self.display_frame = tk.Frame(self)
+        self.display_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Create the image label
+        self.image_label = tk.Label(self.display_frame)
+        self.image_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Create the text sidebar
+        self.text_sidebar = tk.Text(self.display_frame, width=20, height=10, font=("Arial", 12), state=tk.DISABLED)
+        self.text_sidebar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Filename label below the image
         self.filename_label = tk.Label(self, text="")
         self.filename_label.pack()
 
@@ -63,8 +61,11 @@ class ImageSlideshow(tk.Tk):
         folder_path = filedialog.askdirectory(title="Select Image Folder")
         if folder_path:
             self.load_image_files(folder_path)
-            self.slider.config(to=len(self.image_files) - 1)  # Update slider range
-            self.show_image(self.current_index)
+            if self.image_files:  # Check if any image files were found
+                self.slider.config(to=len(self.image_files) - 1)  # Update slider range
+                self.show_image(self.current_index)
+            else:
+                messagebox.showerror("Error", "No image files found in the selected folder.")
 
     def load_image_files(self, folder_path):
         self.image_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
@@ -73,29 +74,39 @@ class ImageSlideshow(tk.Tk):
     def load_image(self, index):
         if index >= 0 and index < len(self.image_files):
             image_path = self.image_files[index]
-            image = Image.open(image_path)
+            try:
+                image = Image.open(image_path)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load image {image_path}: {e}")
+                return None, ""
 
             data_path = os.path.splitext(image_path)[0] + '.csv'
-            if data_path.isfile():
-                with open(data_path, newline='') as csvfile:
-                    reader = csv.reader(csvfile)
-                    for row in reader:
-                        if reader.line_num == 1:
-                            image_text  = "Time:     " + row[1] + "\n"
-                            image_text += "Depth:    " + row[4] + "\n"
-                            image_text += "Altitude: " + row[5] + "\n"
-                            image_text += "Pitch:    " + row[6] + "\n"
-                            image_text += "Roll:     " + row[7] + "\n"
-                        elif reader.line_num == 2:
-                            image_text += "Exposure: " + row[2]
-
-                draw = ImageDraw.Draw(image)
-                fnt = ImageFont.truetype("Courier New Bold.ttf", 128)
-                draw.text((250, 250), image_text, fill =(0, 0, 0), font = fnt)
+            image_text = ""
+            if os.path.isfile(data_path):  # Fixed the file existence check
+                try:
+                    with open(data_path, newline='') as csvfile:
+                        reader = csv.reader(csvfile)
+                        for row in reader:
+                            if reader.line_num == 1:
+                                image_text  = "Time:     " + row[1] + "\n"
+                                image_text += "Depth:    " + row[4] + "\n"
+                                image_text += "Altitude: " + row[5] + "\n"
+                                image_text += "Pitch:    " + row[6] + "\n"
+                                image_text += "Roll:     " + row[7] + "\n"
+                            elif reader.line_num == 2:
+                                image_text += "Exposure: " + row[2]
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to load CSV data from {data_path}: {e}")
 
             image.thumbnail(self.thumbnail_size)
             photo = ImageTk.PhotoImage(image)
-            
+
+            # Update the text in the sidebar
+            self.text_sidebar.config(state=tk.NORMAL)
+            self.text_sidebar.delete(1.0, tk.END)
+            self.text_sidebar.insert(tk.END, image_text)
+            self.text_sidebar.config(state=tk.DISABLED)
+
             return photo, os.path.basename(image_path)
         return None, ""
 
