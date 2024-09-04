@@ -11,9 +11,10 @@
 #Updated to add a slider functionality to quickly scroll through images and also maintain play button functionality.
 
 import os
+import csv
 import tkinter as tk
 from tkinter import filedialog
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 
 class ImageSlideshow(tk.Tk):
     def __init__(self, slideshow_interval=0.1, thumbnail_size=(800, 600)):
@@ -73,8 +74,28 @@ class ImageSlideshow(tk.Tk):
         if index >= 0 and index < len(self.image_files):
             image_path = self.image_files[index]
             image = Image.open(image_path)
+
+            data_path = os.path.splitext(image_path)[0] + '.csv'
+            if data_path.isfile():
+                with open(data_path, newline='') as csvfile:
+                    reader = csv.reader(csvfile)
+                    for row in reader:
+                        if reader.line_num == 1:
+                            image_text  = "Time:     " + row[1] + "\n"
+                            image_text += "Depth:    " + row[4] + "\n"
+                            image_text += "Altitude: " + row[5] + "\n"
+                            image_text += "Pitch:    " + row[6] + "\n"
+                            image_text += "Roll:     " + row[7] + "\n"
+                        elif reader.line_num == 2:
+                            image_text += "Exposure: " + row[2]
+
+                draw = ImageDraw.Draw(image)
+                fnt = ImageFont.truetype("Courier New Bold.ttf", 128)
+                draw.text((250, 250), image_text, fill =(0, 0, 0), font = fnt)
+
             image.thumbnail(self.thumbnail_size)
             photo = ImageTk.PhotoImage(image)
+            
             return photo, os.path.basename(image_path)
         return None, ""
 
