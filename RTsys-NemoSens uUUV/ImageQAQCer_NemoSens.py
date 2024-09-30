@@ -6,8 +6,11 @@ from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+ImageX = 900 #Monitor = 1100
+ImageY = 750 #Monitor = 750
+
 class ImageSlideshow(tk.Tk):
-    def __init__(self, slideshow_interval=0.1, thumbnail_size=(1100, 750)):  # Adjusted image size
+    def __init__(self, slideshow_interval=0.1, thumbnail_size=(ImageX, ImageY)):  # Adjusted image size for laptop
         super().__init__()
         self.title("Image QAQCer")
         self.slideshow_interval = slideshow_interval
