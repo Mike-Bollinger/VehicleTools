@@ -14,7 +14,6 @@ Main Features:
 - Play, pause, and navigate images with forward and backward buttons.
 - Display image metadata from CSV in a sidebar.
 - Plot geographic coordinates of images and highlight the current one.
-- Handle missing CSV files gracefully with default values of 999.
 """
 import os
 import csv

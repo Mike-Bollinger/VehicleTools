@@ -1,8 +1,18 @@
+"""
+Title: Image QAQC Viewer
+Author: Mike Bollinger with contributions from ChatGPT
+Date: 2024-10-10
+Version: 1.0
+
+Description:
+This script provides a simple image slideshow viewer. It allows users to select a folder containing images
+and view them one by one, with controls to navigate forward, backward, pause, or play the slideshow. The
+user can also use a slider to select a specific image by index. The application supports JPG, JPEG, TIFF, TIF, and PNG formats.
+"""
 import os
-import csv
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk, ImageDraw, ImageFont
+from PIL import Image, ImageTk
 
 class ImageSlideshow(tk.Tk):
     def __init__(self, slideshow_interval=0.1, thumbnail_size=(1000, 650)):
@@ -17,17 +27,13 @@ class ImageSlideshow(tk.Tk):
         self.is_playing = False
         self.slideshow_id = None
 
-        # Create a frame for the image and text
+        # Create a frame for the image
         self.display_frame = tk.Frame(self)
         self.display_frame.pack(fill=tk.BOTH, expand=True)
 
         # Create the image label
         self.image_label = tk.Label(self.display_frame)
-        self.image_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # Create the text sidebar
-        self.text_sidebar = tk.Text(self.display_frame, width=20, height=10, font=("Arial", 12), state=tk.DISABLED)
-        self.text_sidebar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.image_label.pack(fill=tk.BOTH, expand=True)
 
         # Filename label below the image
         self.filename_label = tk.Label(self, text="")
@@ -69,7 +75,7 @@ class ImageSlideshow(tk.Tk):
 
     def load_image_files(self, folder_path):
         self.image_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
-                            if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                            if f.lower().endswith(('.jpg', '.jpeg', '.png', '.tif', 'tiff'))]
 
     def load_image(self, index):
         if index >= 0 and index < len(self.image_files):
@@ -80,33 +86,8 @@ class ImageSlideshow(tk.Tk):
                 messagebox.showerror("Error", f"Failed to load image {image_path}: {e}")
                 return None, ""
 
-            data_path = os.path.splitext(image_path)[0] + '.csv'
-            image_text = ""
-            if os.path.isfile(data_path):  # Fixed the file existence check
-                try:
-                    with open(data_path, newline='') as csvfile:
-                        reader = csv.reader(csvfile)
-                        for row in reader:
-                            if reader.line_num == 1:
-                                image_text  = "Time:     " + row[1] + "\n"
-                                image_text += "Depth:    " + row[4] + "\n"
-                                image_text += "Altitude: " + row[5] + "\n"
-                                image_text += "Pitch:    " + row[6] + "\n"
-                                image_text += "Roll:     " + row[7] + "\n"
-                            elif reader.line_num == 2:
-                                image_text += "Exposure: " + row[2]
-                except Exception as e:
-                    messagebox.showerror("Error", f"Failed to load CSV data from {data_path}: {e}")
-
             image.thumbnail(self.thumbnail_size)
             photo = ImageTk.PhotoImage(image)
-
-            # Update the text in the sidebar
-            self.text_sidebar.config(state=tk.NORMAL)
-            self.text_sidebar.delete(1.0, tk.END)
-            self.text_sidebar.insert(tk.END, image_text)
-            self.text_sidebar.config(state=tk.DISABLED)
-
             return photo, os.path.basename(image_path)
         return None, ""
 
