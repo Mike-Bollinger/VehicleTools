@@ -1,3 +1,21 @@
+"""
+Title: Image QAQCer Application with Sidecar CSV metadata display
+Author: Mike Bollinger with contributions from ChatGPT
+Date: 2024-10-10
+Version: 1.0
+
+Description:
+This application displays images from a selected folder in a slideshow format with controls to navigate through images.
+For each image, the application reads associated metadata from a sidecar CSV file and displays the text on a sidebar.
+It also plots the geographic coordinates (latitude, longitude) of each image, highlighting the currently displayed image.
+In case of missing CSV files, default values of 999 are used and erroneous coordinates are filtered from the plot.
+
+Main Features:
+- Play, pause, and navigate images with forward and backward buttons.
+- Display image metadata from CSV in a sidebar.
+- Plot geographic coordinates of images and highlight the current one.
+- Handle missing CSV files gracefully with default values of 999.
+"""
 import os
 import csv
 import tkinter as tk
