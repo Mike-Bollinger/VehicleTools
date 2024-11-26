@@ -23,7 +23,7 @@ from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-ImageX = 1200 #Monitor = 1100, Laptop = 900
+ImageX = 900 #Monitor = 1100, Laptop = 900
 ImageY = 750 #Monitor = 750
 
 class ImageSlideshow(tk.Tk):
