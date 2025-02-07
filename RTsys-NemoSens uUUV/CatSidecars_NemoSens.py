@@ -97,7 +97,8 @@ def concatenate_csvs_to_csv_and_shapefile(input_folders, output_folder, progress
                 for chunk in pd.read_csv(file, chunksize=2000, header=None, names=CSV_HEADERS, low_memory=True):
                     chunk = fix_split_rows(chunk)
 
-                    chunk['source_file'] = filename
+                    #chunk['source_file'] = filename    #No file extension
+                    chunk['source_file'] = os.path.basename(image_path) if image_path else filename #
                     chunk['image_path'] = image_path
 
                     if not header_written:
