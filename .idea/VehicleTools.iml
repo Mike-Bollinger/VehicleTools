@@ -4,7 +4,6 @@
     <content url="file://$MODULE_DIR$" />
     <orderEntry type="jdk" jdkName="vtools" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="ImageryTools" />
   </component>
   <component name="PyDocumentationSettings">
     <option name="format" value="PLAIN" />
