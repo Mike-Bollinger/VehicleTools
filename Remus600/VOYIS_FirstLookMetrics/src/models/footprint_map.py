@@ -614,14 +614,15 @@ class FootprintMap:
             print("No valid footprints could be calculated")
             return None
             
-        # Calculate image overlap if we have enough footprints
-        overlap_stats = None
+        # Calculate vertical overlap (previously image_overlap)
+        vertical_overlap_stats = None
         if len(footprints) >= 2:
-            print("\nCalculating image overlap...")
-            overlap_stats = self.calculate_image_overlap(footprints)
+            print("\nCalculating vertical overlap between sequential images...")
+            vertical_overlap_stats = self.calculate_vertical_overlap(footprints)
+            print("Vertical overlap calculation complete")
         
         # Store overlap stats for later use in exports
-        self.overlap_stats = overlap_stats
+        self.vertical_overlap_stats = vertical_overlap_stats
         
         # Create figure for plotting
         print("Creating plot...")
@@ -660,12 +661,18 @@ class FootprintMap:
             np.mean([fp["altitude"] for fp in footprints])
         )
         
-        if overlap_stats:
-            stats_text += '\n\nImage Overlap:\nAvg: {:.1f}%\nMedian: {:.1f}%\nRange: {:.1f}%-{:.1f}%'.format(
-                overlap_stats['avg_overlap'],
-                overlap_stats['median_overlap'],
-                overlap_stats['min_overlap'],
-                overlap_stats['max_overlap']
+        # Update the stats text in the map
+        if vertical_overlap_stats:
+            stats_text += '\n\nVertical Overlap:\nAvg: {:.1f}%\nMedian: {:.1f}%\nRange: {:.1f}%-{:.1f}%\n'.format(
+                vertical_overlap_stats['avg_overlap'],
+                vertical_overlap_stats['median_overlap'],
+                vertical_overlap_stats['min_overlap'],
+                vertical_overlap_stats['max_overlap']
+            )
+            stats_text += 'Low (<40%): {}\nMedium (40-70%): {}\nHigh (>70%): {}'.format(
+                vertical_overlap_stats['low_overlap'],
+                vertical_overlap_stats['medium_overlap'],
+                vertical_overlap_stats['high_overlap']
             )
         
         ax.text(0.02, 0.98, stats_text, 
@@ -675,19 +682,68 @@ class FootprintMap:
         # Adjust layout
         plt.tight_layout()
         
+        # Configure axis formatting to show full coordinate values
+        # Round to 6 decimal places (approximately 0.1 meter precision)
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+        
+        # Rotate x-axis labels for better readability
+        plt.xticks(rotation=45, ha='right')
+        
+        # Adjust layout to accommodate the longer tick labels
+        plt.tight_layout()
+        
         # Save plot
         output_file = os.path.join(output_path, filename)
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.close()
         
-        # Export to CSV and shapefile
+        # Calculate all types of overlap first
+        
+        # Calculate vertical overlap (previously image_overlap)
+        if len(footprints) >= 2:
+            print("\nCalculating vertical overlap between sequential images...")
+            vertical_overlap_stats = self.calculate_vertical_overlap(footprints)
+            print("Vertical overlap calculation complete")
+            self.vertical_overlap_stats = vertical_overlap_stats
+        
+        # Calculate horizontal overlap
+        if len(footprints) >= 21:  # Need at least min_separation+1 images
+            print("\nCalculating horizontal overlap...")
+            horizontal_overlap_stats = self.calculate_horizontal_overlap(footprints)
+            print("Horizontal overlap calculation complete")
+            self.horizontal_overlap_stats = horizontal_overlap_stats
+        
+        # Calculate overall overlap
+        if len(footprints) >= 2:
+            print("\nCalculating overall overlap...")
+            overall_overlap_stats = self.calculate_overall_overlap(footprints)
+            print("Overall overlap calculation complete")
+            self.overall_overlap_stats = overall_overlap_stats
+        
+        # Create various overlap maps
+        
+        # Create vertical overlap map
+        if len(footprints) >= 2:
+            print("\nCreating vertical overlap map...")
+            self.create_vertical_overlap_map(footprints, output_path)
+            print("Vertical overlap map created")
+
+        # Create horizontal overlap map
+        if len(footprints) >= 21:  # Need at least min_separation+1 images
+            print("\nCreating horizontal overlap map...")
+            self.create_horizontal_overlap_map(footprints, output_path)
+            print("Horizontal overlap map created")
+        
+        # Create overall overlap map
+        if len(footprints) >= 2:
+            print("\nCreating overall overlap map...")
+            self.create_overall_overlap_map(footprints, output_path)
+            print("Overall overlap map created")
+        
+        # Export to CSV and shapefile AFTER all overlap metrics are calculated
         print("Exporting to CSV and shapefile...")
         self.export_footprints(footprints, output_path)
-        
-        # Create overlap map if we have enough footprints
-        if len(footprints) >= 2:
-            print("\nCreating image overlap map...")
-            self.create_overlap_map(footprints, output_path)
 
         return output_file
     
@@ -695,7 +751,7 @@ class FootprintMap:
                          csv_filename: str = "image_footprints.csv",
                          shapefile_filename: str = "image_footprints.shp") -> Dict[str, str]:
         """
-        Export footprint data to CSV and shapefile formats
+        Export footprint data to CSV and shapefile formats, including overlap metrics
         
         Args:
             footprints: List of dictionaries with footprint data
@@ -710,12 +766,76 @@ class FootprintMap:
         
         # Ensure all footprints have proper formatting
         formatted_footprints = []
+        
+        # Create lookup dictionaries for overlap metrics
+        vertical_overlaps = {}
+        horizontal_overlaps = {}
+        overall_overlap_counts = {}
+        
+        # Build vertical overlap lookup if available
+        if hasattr(self, 'vertical_overlap_stats') and self.vertical_overlap_stats and 'overlap_data' in self.vertical_overlap_stats:
+            for overlap in self.vertical_overlap_stats['overlap_data']:
+                # Get current and next footprint filename
+                current_filename = overlap['current_fp']['filename']
+                next_filename = overlap['next_fp']['filename']
+                overlap_pct = overlap['overlap_percent']
+                
+                # Store overlap percentage for both images
+                if current_filename not in vertical_overlaps:
+                    vertical_overlaps[current_filename] = []
+                vertical_overlaps[current_filename].append(overlap_pct)
+                
+                if next_filename not in vertical_overlaps:
+                    vertical_overlaps[next_filename] = []
+                vertical_overlaps[next_filename].append(overlap_pct)
+        
+        # Build horizontal overlap lookup if available
+        if hasattr(self, 'horizontal_overlap_stats') and self.horizontal_overlap_stats and 'overlap_data' in self.horizontal_overlap_stats:
+            for overlap in self.horizontal_overlap_stats['overlap_data']:
+                # Get current and next footprint filename
+                current_filename = overlap['current_fp']['filename']
+                next_filename = overlap['next_fp']['filename']
+                overlap_pct = overlap['overlap_percent']
+                
+                # Store overlap percentage for both images
+                if current_filename not in horizontal_overlaps:
+                    horizontal_overlaps[current_filename] = []
+                horizontal_overlaps[current_filename].append(overlap_pct)
+                
+                if next_filename not in horizontal_overlaps:
+                    horizontal_overlaps[next_filename] = []
+                horizontal_overlaps[next_filename].append(overlap_pct)
+        
+        # Build overall overlap count lookup if available
+        if hasattr(self, 'overall_overlap_stats') and self.overall_overlap_stats and 'polygons' in self.overall_overlap_stats:
+            for poly_data in self.overall_overlap_stats['polygons']:
+                filename = poly_data['footprint']['filename']
+                overlap_count = poly_data['overlap_count']
+                overall_overlap_counts[filename] = overlap_count
+        
+        # Process each footprint and add overlap metrics
         for fp in footprints:
             # Format datetime for CSV
             datetime_str = fp.get('DateTime', 'unknown')
             if isinstance(datetime_str, datetime.datetime):
                 datetime_str = datetime_str.strftime("%Y-%m-%d %H:%M:%S")
-                
+            
+            # Get filename for lookups
+            filename = fp['filename']
+            
+            # Calculate average vertical overlap for this footprint
+            vert_overlap_avg = 0.0
+            if filename in vertical_overlaps and vertical_overlaps[filename]:
+                vert_overlap_avg = sum(vertical_overlaps[filename]) / len(vertical_overlaps[filename])
+            
+            # Calculate average horizontal overlap for this footprint
+            horiz_overlap_avg = 0.0
+            if filename in horizontal_overlaps and horizontal_overlaps[filename]:
+                horiz_overlap_avg = sum(horizontal_overlaps[filename]) / len(horizontal_overlaps[filename])
+            
+            # Get overall overlap count for this footprint
+            overall_count = overall_overlap_counts.get(filename, 0)
+            
             formatted_fp = {
                 'filename': fp['filename'],
                 'latitude': fp['latitude'],
@@ -726,7 +846,10 @@ class FootprintMap:
                 'height': fp['height'],
                 'area': fp['width'] * fp['height'],
                 'DateTime': datetime_str,
-                'below_threshold': 'Yes'  # Always Yes, since we've already filtered
+                'below_threshold': 'Yes',  # Always Yes, since we've already filtered
+                'vert_overlap_avg': round(vert_overlap_avg, 2),
+                'horiz_overlap_avg': round(horiz_overlap_avg, 2),
+                'overall_overlap_count': overall_count
             }
             formatted_footprints.append(formatted_fp)
         
@@ -747,14 +870,33 @@ class FootprintMap:
             print(f"  Heading range: {df['heading'].min():.1f} to {df['heading'].max():.1f} degrees")
         
         # Print overlap statistics if available
-        if hasattr(self, 'overlap_stats') and self.overlap_stats:
-            print(f"\nImage Overlap Statistics:")
-            print(f"  Average overlap: {self.overlap_stats['avg_overlap']:.1f}%")
-            print(f"  Median overlap: {self.overlap_stats['median_overlap']:.1f}%")
-            print(f"  Overlap range: {self.overlap_stats['min_overlap']:.1f}% to {self.overlap_stats['max_overlap']:.1f}%")
-            print(f"  Low overlap (<20%): {self.overlap_stats['low_overlap']} image pairs")
-            print(f"  Medium overlap (20-60%): {self.overlap_stats['medium_overlap']} image pairs")
-            print(f"  High overlap (>60%): {self.overlap_stats['high_overlap']} image pairs")
+        if hasattr(self, 'vertical_overlap_stats') and self.vertical_overlap_stats:
+            print(f"\nVertical Overlap Statistics:")
+            print(f"  Average overlap: {self.vertical_overlap_stats['avg_overlap']:.1f}%")
+            print(f"  Median overlap: {self.vertical_overlap_stats['median_overlap']:.1f}%")
+            print(f"  Overlap range: {self.vertical_overlap_stats['min_overlap']:.1f}% to {self.vertical_overlap_stats['max_overlap']:.1f}%")
+            print(f"  Low overlap (<40%): {self.vertical_overlap_stats['low_overlap']} image pairs")
+            print(f"  Medium overlap (40-70%): {self.vertical_overlap_stats['medium_overlap']} image pairs")
+            print(f"  High overlap (>70%): {self.vertical_overlap_stats['high_overlap']} image pairs")
+        
+        # Add horizontal overlap statistics if available
+        if hasattr(self, 'horizontal_overlap_stats') and self.horizontal_overlap_stats:
+            print(f"\nHorizontal Overlap Statistics:")
+            print(f"  Average overlap: {self.horizontal_overlap_stats['avg_overlap']:.1f}%")
+            print(f"  Median overlap: {self.horizontal_overlap_stats['median_overlap']:.1f}%")
+            print(f"  Overlap range: {self.horizontal_overlap_stats['min_overlap']:.1f}% to {self.horizontal_overlap_stats['max_overlap']:.1f}%")
+            print(f"  Low overlap (<10%): {self.horizontal_overlap_stats['low_overlap']} image pairs")
+            print(f"  Medium overlap (10-40%): {self.horizontal_overlap_stats['medium_overlap']} image pairs")
+            print(f"  High overlap (>40%): {self.horizontal_overlap_stats['high_overlap']} image pairs")
+            print(f"  Total pairs with overlap: {self.horizontal_overlap_stats['total_pairs']}")
+        
+        # Add overall overlap statistics if available
+        if hasattr(self, 'overall_overlap_stats') and self.overall_overlap_stats:
+            print(f"\nOverall Overlap Statistics:")
+            print(f"  Average overlaps per image: {self.overall_overlap_stats['avg_count']:.1f}")
+            print(f"  Median overlaps: {self.overall_overlap_stats['median_count']:.1f}")
+            print(f"  Range: {self.overall_overlap_stats['min_count']} to {self.overall_overlap_stats['max_count']} overlaps per image")
+            print(f"  Total overlapping pairs: {self.overall_overlap_stats['total_overlaps']}")
         
         # Export to CSV
         csv_path = os.path.join(output_path, csv_filename)
@@ -794,25 +936,19 @@ class FootprintMap:
         """Set the altitude threshold for filtering images"""
         self.altitude_threshold = threshold
 
-    def calculate_image_overlap(self, footprints: List[Dict]) -> Dict:
-        """
-        Calculate overlap between sequential images in the dataset
-        
-        Args:
-            footprints: List of footprint data dictionaries
-            
-        Returns:
-            Dictionary with overlap statistics
-        """
+    def calculate_vertical_overlap(self, footprints: List[Dict]) -> Dict:
+        """Calculate vertical overlap between sequential images"""
         if not GEOPANDAS_AVAILABLE:
-            print("Geopandas not available. Cannot calculate image overlap.")
+            print("Geopandas not available. Cannot calculate vertical overlap.")
             return None
             
         if len(footprints) < 2:
-            print("Not enough images to calculate overlap.")
+            print("Not enough images to calculate vertical overlap.")
             return None
         
         try:
+            print(f"Calculating vertical overlap for {len(footprints)} images...")
+            
             # Sort footprints by datetime if available
             sorted_footprints = []
             for fp in footprints:
@@ -833,14 +969,15 @@ class FootprintMap:
             sorted_footprints.sort(key=lambda x: x[0])
             
             if len(sorted_footprints) < 2:
-                print("Not enough images with valid datetimes to calculate overlap.")
+                print("Not enough images with valid datetimes to calculate vertical overlap.")
                 return None
                 
-            print(f"Calculating overlap for {len(sorted_footprints)} sorted images")
+            print(f"Calculating vertical overlap for {len(sorted_footprints)} sorted images")
             
             # Calculate overlap between sequential pairs
             overlaps = []
             overlap_areas = []
+            overlap_data = []  # Store full overlap data for mapping
             
             for i in range(len(sorted_footprints) - 1):
                 _, current_fp = sorted_footprints[i]
@@ -866,9 +1003,25 @@ class FootprintMap:
                     overlaps.append(overlap_percent)
                     overlap_areas.append(intersection_area)
                     
+                    # Store data for mapping
+                    overlap_data.append({
+                        'current_poly': current_poly,
+                        'next_poly': next_poly,
+                        'intersection': intersection,
+                        'overlap_percent': overlap_percent,
+                        'current_fp': current_fp,
+                        'next_fp': next_fp,
+                        'midpoint': ((current_fp['longitude'] + next_fp['longitude'])/2, 
+                                    (current_fp['latitude'] + next_fp['latitude'])/2)
+                    })
+                    
                     # Debug first few overlaps
                     if i < 5:
-                        print(f"Overlap {i}: {overlap_percent:.2f}% ({intersection_area:.2f}m² of {smaller_area:.2f}m²)")
+                        print(f"Vertical Overlap {i}: {overlap_percent:.2f}% ({intersection_area:.2f}m² of {smaller_area:.2f}m²)")
+            
+                # Add a print statement to show progress
+                if i % 20 == 0 and i > 0:
+                    print(f"  Processed {i}/{len(sorted_footprints)} images for vertical overlap")
             
             # Calculate statistics
             if overlaps:
@@ -877,19 +1030,21 @@ class FootprintMap:
                 max_overlap = np.max(overlaps)
                 median_overlap = np.median(overlaps)
                 
-                # Count images with different overlap ranges
-                low_overlap = sum(1 for o in overlaps if o < 20)
-                medium_overlap = sum(1 for o in overlaps if 20 <= o < 60)
-                high_overlap = sum(1 for o in overlaps if o >= 60)
+                # Updated overlap ranges as requested
+                low_overlap = sum(1 for o in overlaps if o < 40)
+                medium_overlap = sum(1 for o in overlaps if 40 <= o < 70)
+                high_overlap = sum(1 for o in overlaps if o >= 70)
                 
-                print(f"\nOverlap Statistics:")
+                print(f"\nVertical Overlap Statistics:")
                 print(f"  Average overlap: {avg_overlap:.2f}%")
                 print(f"  Median overlap: {median_overlap:.2f}%")
                 print(f"  Minimum overlap: {min_overlap:.2f}%")
                 print(f"  Maximum overlap: {max_overlap:.2f}%")
-                print(f"  Low overlap (<20%): {low_overlap} image pairs")
-                print(f"  Medium overlap (20-60%): {medium_overlap} image pairs")
-                print(f"  High overlap (>60%): {high_overlap} image pairs")
+                print(f"  Low overlap (<40%): {low_overlap} image pairs")
+                print(f"  Medium overlap (40-70%): {medium_overlap} image pairs")
+                print(f"  High overlap (>70%): {high_overlap} image pairs")
+                
+                print(f"Vertical overlap calculation complete with {len(overlaps)} pairs")
                 
                 return {
                     'avg_overlap': avg_overlap,
@@ -899,7 +1054,8 @@ class FootprintMap:
                     'total_pairs': len(overlaps),
                     'low_overlap': low_overlap,
                     'medium_overlap': medium_overlap,
-                    'high_overlap': high_overlap
+                    'high_overlap': high_overlap,
+                    'overlap_data': overlap_data  # Store for mapping
                 }
             else:
                 print("No overlap found between sequential images.")
@@ -911,10 +1067,10 @@ class FootprintMap:
             print(traceback.format_exc())
             return None
 
-    def create_overlap_map(self, footprints: List[Dict], output_path: str, 
-                          filename: str = "image_overlap_map.png") -> Optional[str]:
+    def create_vertical_overlap_map(self, footprints: List[Dict], output_path: str, 
+                              filename: str = "vertical_overlap_map.png") -> Optional[str]:
         """
-        Create a map showing overlap between sequential images
+        Create a map showing vertical overlap between sequential images with discrete color categories
         
         Args:
             footprints: List of dictionaries with footprint data
@@ -925,14 +1081,148 @@ class FootprintMap:
             Path to the saved plot file, or None if no data or error
         """
         if not GEOPANDAS_AVAILABLE:
-            print("Geopandas not available. Cannot create overlap map.")
+            print("Geopandas not available. Cannot create vertical overlap map.")
             return None
         
-        if len(footprints) < 2:
-            print("Not enough images to calculate overlap.")
+        if not hasattr(self, 'vertical_overlap_stats') or not self.vertical_overlap_stats:
+            print("No vertical overlap statistics available. Calculate vertical overlap first.")
+            return None
+            
+        if 'overlap_data' not in self.vertical_overlap_stats:
+            print("No detailed vertical overlap data available.")
             return None
         
         try:
+            # Use non-interactive backend to avoid threading issues
+            import matplotlib
+            matplotlib.use('Agg')
+            
+            # Create figure for plotting
+            fig, ax = plt.subplots(figsize=(12, 10))
+            
+            # Create discrete colors for overlap categories
+            # Red for low, yellow for medium, green for high
+            low_color = '#FF4040'      # Red
+            medium_color = '#FFFF40'   # Yellow
+            high_color = '#40FF40'     # Green
+            
+            # Plot footprints
+            for fp in footprints:
+                # Plot the footprint outline with very low alpha
+                polygon = np.array(fp['vertices'])
+                ax.fill(polygon[:, 0], polygon[:, 1], alpha=0.05, edgecolor='gray', facecolor='whitesmoke')
+            
+            # Create a colormap for the legend only
+            import matplotlib.colors as mcolors
+            import matplotlib.cm as cm
+            
+            colors = [low_color, medium_color, high_color]
+            bounds = [0, 40, 70, 100]
+            norm = mcolors.BoundaryNorm(bounds, len(colors))
+            cmap = mcolors.ListedColormap(colors)
+            
+            # Plot overlap regions with discrete colors based on category
+            for overlap in self.vertical_overlap_stats['overlap_data']:
+                # Get intersection geometry
+                intersection = overlap['intersection']
+                overlap_pct = overlap['overlap_percent']
+                
+                # Determine color based on overlap percentage
+                if overlap_pct < 40:
+                    color = low_color
+                elif overlap_pct < 70:
+                    color = medium_color
+                else:
+                    color = high_color
+                
+                # Plot intersection
+                if intersection.geom_type == 'Polygon':
+                    x, y = intersection.exterior.xy
+                    ax.fill(x, y, alpha=0.7, edgecolor='none', facecolor=color)
+                    
+                    # Add a small text with the overlap percentage for significant areas
+                    if intersection.area > 0.0001:  # Only add text if area is significant
+                        centroid = intersection.centroid
+                        ax.text(centroid.x, centroid.y, f"{overlap_pct:.0f}%", 
+                               fontsize=8, ha='center', va='center',
+                               bbox=dict(facecolor='white', alpha=0.7, pad=1, boxstyle='round,pad=0.2'))
+                    
+                elif intersection.geom_type == 'MultiPolygon':
+                    for poly in intersection.geoms:
+                        x, y = poly.exterior.xy
+                        ax.fill(x, y, alpha=0.7, edgecolor='none', facecolor=color)
+            
+            # Set labels and title
+            ax.set_xlabel('Longitude (Decimal Degrees)')
+            ax.set_ylabel('Latitude (Decimal Degrees)')
+            ax.set_title('Vertical Overlap Analysis - Sequential Images')
+            
+            # Add grid
+            ax.grid(True, linestyle='--', alpha=0.3)
+            
+            # Create a custom legend
+            from matplotlib.patches import Patch
+            legend_elements = [
+                Patch(facecolor=low_color, edgecolor='none', alpha=0.7, label='Low (<40%)'),
+                Patch(facecolor=medium_color, edgecolor='none', alpha=0.7, label='Medium (40-70%)'),
+                Patch(facecolor=high_color, edgecolor='none', alpha=0.7, label='High (>70%)')
+            ]
+            ax.legend(handles=legend_elements, loc='upper right')
+            
+            # Add overlap statistics
+            stats_text = 'Vertical Overlap Statistics:\n'
+            stats_text += 'Avg: {:.1f}%\n'.format(self.vertical_overlap_stats['avg_overlap'])
+            stats_text += 'Median: {:.1f}%\n'.format(self.vertical_overlap_stats['median_overlap'])
+            stats_text += 'Range: {:.1f}%-{:.1f}%\n'.format(
+                self.vertical_overlap_stats['min_overlap'], 
+                self.vertical_overlap_stats['max_overlap']
+            )
+            stats_text += 'Image pairs: {}\n'.format(self.vertical_overlap_stats['total_pairs'])
+            stats_text += 'Low (<40%): {}\n'.format(self.vertical_overlap_stats['low_overlap'])
+            stats_text += 'Medium (40-70%): {}\n'.format(self.vertical_overlap_stats['medium_overlap'])
+            stats_text += 'High (>70%): {}'.format(self.vertical_overlap_stats['high_overlap'])
+            
+            ax.text(0.02, 0.98, stats_text, 
+                    transform=ax.transAxes, fontsize=9, 
+                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
+            # Configure axis formatting to show full coordinate values
+            ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+            
+            # Rotate x-axis labels for better readability
+            plt.xticks(rotation=45, ha='right')
+            
+            # Adjust layout to accommodate the longer tick labels
+            plt.tight_layout()
+            
+            # Save plot
+            output_file = os.path.join(output_path, filename)
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close(fig)  # Explicitly close figure
+            
+            print(f"Vertical overlap map with discrete color categories saved to: {output_file}")
+            return output_file
+            
+        except Exception as e:
+            print(f"Error creating vertical overlap map: {e}")
+            import traceback
+            print(traceback.format_exc())
+            return None
+
+    def calculate_horizontal_overlap(self, footprints: List[Dict], min_separation: int = 20) -> Dict:
+        """Calculate horizontal overlap between non-sequential images"""
+        if not GEOPANDAS_AVAILABLE:
+            print("Geopandas not available. Cannot calculate horizontal overlap.")
+            return None
+            
+        if len(footprints) < min_separation + 1:
+            print(f"Not enough images to calculate horizontal overlap (need at least {min_separation + 1}).")
+            return None
+        
+        try:
+            print(f"Calculating horizontal overlap for {len(footprints)} images (min separation: {min_separation})...")
+            
             # Sort footprints by datetime if available
             sorted_footprints = []
             for fp in footprints:
@@ -952,92 +1242,502 @@ class FootprintMap:
             # Sort by datetime
             sorted_footprints.sort(key=lambda x: x[0])
             
-            if len(sorted_footprints) < 2:
-                print("Not enough images with valid datetimes to calculate overlap.")
+            if len(sorted_footprints) < min_separation + 1:
+                print(f"Not enough images with valid datetimes to calculate horizontal overlap.")
                 return None
+                
+            print(f"Calculating horizontal overlap for {len(sorted_footprints)} images (min separation: {min_separation})...")
+            
+            # Add more verbose logging
+            print(f"  Found {len(sorted_footprints)} images with valid timestamps for horizontal overlap analysis")
+
+            # Create R-tree spatial index
+            from rtree import index
+            idx = index.Index()
+            for i, (_, fp) in enumerate(sorted_footprints):
+                poly = Polygon(fp['vertices'])
+                idx.insert(i, poly.bounds)
+            
+            # Initialize lists for storing overlap data
+            horizontal_overlaps = []
+            overlap_areas = []
+            overlap_data = []
+            
+            # For each footprint, check overlap with all footprints at least min_separation away
+            total_checks = 0
+            processed_images = 0
+            for i in range(len(sorted_footprints)):
+                _, current_fp = sorted_footprints[i]
+                current_poly = Polygon(current_fp['vertices'])
+                
+                # Get potential candidates from index
+                candidates = list(idx.intersection(current_poly.bounds))
+                
+                for j in candidates:
+                    # Skip if it's the same footprint or too close in sequence
+                    if i == j or abs(i - j) < min_separation:
+                        continue
+                        
+                    _, distant_fp = sorted_footprints[j]
+                    distant_poly = Polygon(distant_fp['vertices'])
+                    
+                    total_checks += 1
+                    
+                    # Only now do the expensive exact intersection test
+                    if current_poly.intersects(distant_poly):
+                        intersection = current_poly.intersection(distant_poly)
+                        intersection_area = intersection.area
+                        
+                        # Calculate areas
+                        current_area = current_poly.area
+                        distant_area = distant_poly.area
+                        
+                        # Calculate overlap percentage (based on the smaller footprint)
+                        smaller_area = min(current_area, distant_area)
+                        overlap_percent = (intersection_area / smaller_area) * 100
+                        
+                        horizontal_overlaps.append(overlap_percent)
+                        overlap_areas.append(intersection_area)
+                        
+                        # Store data for mapping
+                        overlap_data.append({
+                            'current_poly': current_poly,
+                            'next_poly': distant_poly,
+                            'intersection': intersection,
+                            'overlap_percent': overlap_percent,
+                            'current_fp': current_fp,
+                            'next_fp': distant_fp,
+                            'current_index': i,
+                            'next_index': j,
+                            'separation': abs(i - j),
+                            'midpoint': ((current_fp['longitude'] + distant_fp['longitude'])/2, 
+                                        (current_fp['latitude'] + distant_fp['latitude'])/2)
+                        })
+                        
+                # Show progress more frequently for large datasets
+                if i % 20 == 0 and i > 0:
+                    processed_images += 20
+                    print(f"  Processed {i}/{len(sorted_footprints)} images, found {len(horizontal_overlaps)} overlaps so far")
+            
+            print(f"Horizontal overlap calculation complete with {len(horizontal_overlaps)} overlapping pairs")
+            
+            # Calculate statistics
+            if horizontal_overlaps:
+                avg_overlap = np.mean(horizontal_overlaps)
+                min_overlap = np.min(horizontal_overlaps)
+                max_overlap = np.max(horizontal_overlaps)
+                median_overlap = np.median(horizontal_overlaps)
+                
+                # Count overlaps in different ranges with UPDATED thresholds for horizontal overlap
+                low_overlap = sum(1 for o in horizontal_overlaps if o < 10)
+                medium_overlap = sum(1 for o in horizontal_overlaps if 10 <= o < 40)
+                high_overlap = sum(1 for o in horizontal_overlaps if o >= 40)
+                
+                print(f"\nHorizontal Overlap Statistics:")
+                print(f"  Total pairs checked: {total_checks}")
+                print(f"  Pairs with overlap: {len(horizontal_overlaps)} ({len(horizontal_overlaps)/total_checks*100:.2f}%)")
+                print(f"  Average overlap: {avg_overlap:.2f}%")
+                print(f"  Median overlap: {median_overlap:.2f}%")
+                print(f"  Minimum overlap: {min_overlap:.2f}%")
+                print(f"  Maximum overlap: {max_overlap:.2f}%")
+                print(f"  Low overlap (<10%): {low_overlap} image pairs")
+                print(f"  Medium overlap (10-40%): {medium_overlap} image pairs")
+                print(f"  High overlap (>40%): {high_overlap} image pairs")
+                
+                # Store horizontal overlap statistics in the object
+                self.horizontal_overlap_stats = {
+                    'avg_overlap': avg_overlap,
+                    'median_overlap': median_overlap,
+                    'min_overlap': min_overlap,
+                    'max_overlap': max_overlap,
+                    'total_checks': total_checks,
+                    'total_pairs': len(horizontal_overlaps),
+                    'low_overlap': low_overlap,
+                    'medium_overlap': medium_overlap,
+                    'high_overlap': high_overlap,
+                    'overlap_data': overlap_data  # Store for mapping
+                }
+                
+                return self.horizontal_overlap_stats
+            else:
+                print("No horizontal overlap found between non-sequential images.")
+                return None
+        
+        except Exception as e:
+            print(f"Error calculating horizontal overlap: {e}")
+            import traceback
+            print(traceback.format_exc())
+            return None
+
+    def create_horizontal_overlap_map(self, footprints: List[Dict], output_path: str, 
+                                     filename: str = "horizontal_overlap_map.png",
+                                     min_separation: int = 20) -> Optional[str]:
+        """
+        Create a map showing horizontal overlap between non-sequential images
+        
+        Args:
+            footprints: List of dictionaries with footprint data
+            output_path: Directory to save the output files
+            filename: Filename for the generated map
+            min_separation: Minimum number of images apart to consider for horizontal overlap
+            
+        Returns:
+            Path to the saved plot file, or None if no data or error
+        """
+        print("\n*** STARTING HORIZONTAL OVERLAP MAP GENERATION ***")
+        print(f"Creating map of horizontal overlaps between non-sequential images...")
+        
+        if not GEOPANDAS_AVAILABLE:
+            print("Geopandas not available. Cannot create horizontal overlap map.")
+            return None
+        
+        # Calculate horizontal overlap if not already done
+        horizontal_overlap_stats = self.calculate_horizontal_overlap(footprints, min_separation)
+        
+        if not horizontal_overlap_stats or not horizontal_overlap_stats.get('overlap_data'):
+            print("No horizontal overlap data available.")
+            return None
+        
+        try:
+            print("Generating visualization of horizontal overlap...")
+            # Use non-interactive backend to avoid threading issues
+            import matplotlib
+            matplotlib.use('Agg')
             
             # Create figure for plotting
-            fig, ax = plt.subplots(figsize=(12, 10))
+            fig, ax = plt.subplots(figsize=(14, 12))
             
-            # Calculate and plot overlaps
-            for i in range(len(sorted_footprints) - 1):
-                _, current_fp = sorted_footprints[i]
-                _, next_fp = sorted_footprints[i + 1]
+            # Create discrete colors for overlap categories
+            # Red for low, orange for medium, green for high
+            low_color = '#FF4040'      # Red
+            medium_color = '#FFA500'   # Orange
+            high_color = '#40FF40'     # Green
+            
+            # First plot all footprints as outlines
+            for fp in footprints:
+                # Plot the footprint outline with very low alpha
+                polygon = np.array(fp['vertices'])
+                ax.fill(polygon[:, 0], polygon[:, 1], alpha=0.05, edgecolor='gray', facecolor='whitesmoke')
+            
+            # Plot overlap regions with discrete colors based on category
+            for overlap in horizontal_overlap_stats['overlap_data']:
+                # Get intersection geometry
+                intersection = overlap['intersection']
+                overlap_pct = overlap['overlap_percent']
                 
-                # Create Shapely polygons from vertices
-                current_poly = Polygon(current_fp['vertices'])
-                next_poly = Polygon(next_fp['vertices'])
+                # Determine color based on horizontal overlap percentage
+                if overlap_pct < 10:
+                    color = low_color
+                elif overlap_pct < 40:
+                    color = medium_color
+                else:
+                    color = high_color
                 
-                # Plot the footprints with low alpha
-                current_poly_coords = np.array(current_fp['vertices'])
-                next_poly_coords = np.array(next_fp['vertices'])
-                
-                ax.fill(current_poly_coords[:, 0], current_poly_coords[:, 1], 
-                       alpha=0.2, edgecolor='blue', facecolor='skyblue')
-                ax.fill(next_poly_coords[:, 0], next_poly_coords[:, 1], 
-                       alpha=0.2, edgecolor='green', facecolor='lightgreen')
-                
-                # Calculate and plot intersection if it exists
-                if current_poly.intersects(next_poly):
-                    intersection = current_poly.intersection(next_poly)
+                # Plot intersection
+                if intersection.geom_type == 'Polygon':
+                    x, y = intersection.exterior.xy
+                    ax.fill(x, y, alpha=0.7, edgecolor='none', facecolor=color)
                     
-                    # Extract coordinates from the intersection geometry
-                    if intersection.geom_type == 'Polygon':
-                        x, y = intersection.exterior.xy
-                        ax.fill(x, y, alpha=0.6, edgecolor='red', facecolor='orange')
+                    # Add a small text with the overlap percentage for significant areas
+                    if intersection.area > 0.0001:  # Only add text if area is significant
+                        centroid = intersection.centroid
+                        ax.text(centroid.x, centroid.y, f"{overlap_pct:.0f}%", 
+                               fontsize=8, ha='center', va='center',
+                               bbox=dict(facecolor='white', alpha=0.7, pad=1, boxstyle='round,pad=0.2'))
                     
-                    # For multi-polygons, extract each polygon
-                    elif intersection.geom_type == 'MultiPolygon':
-                        for poly in intersection.geoms:
-                            x, y = poly.exterior.xy
-                            ax.fill(x, y, alpha=0.6, edgecolor='red', facecolor='orange')
+                elif intersection.geom_type == 'MultiPolygon':
+                    for poly in intersection.geoms:
+                        x, y = poly.exterior.xy
+                        ax.fill(x, y, alpha=0.7, edgecolor='none', facecolor=color)
             
             # Set labels and title
             ax.set_xlabel('Longitude (Decimal Degrees)')
             ax.set_ylabel('Latitude (Decimal Degrees)')
-            ax.set_title('Image Overlap Analysis')
+            ax.set_title(f'Horizontal Image Overlap Analysis (Min. Separation: {min_separation} images)')
             
             # Add grid
-            ax.grid(True, linestyle='--', alpha=0.5)
+            ax.grid(True, linestyle='--', alpha=0.3)
             
-            # Add legend
-            import matplotlib.patches as mpatches
-            blue_patch = mpatches.Patch(color='skyblue', alpha=0.2, label='Image N')
-            green_patch = mpatches.Patch(color='lightgreen', alpha=0.2, label='Image N+1')
-            orange_patch = mpatches.Patch(color='orange', alpha=0.6, label='Overlap')
-            ax.legend(handles=[blue_patch, green_patch, orange_patch], loc='upper right')
+            # Create a custom legend
+            from matplotlib.patches import Patch
+            legend_elements = [
+                Patch(facecolor=low_color, edgecolor='none', alpha=0.7, label='Low (<10%)'),
+                Patch(facecolor=medium_color, edgecolor='none', alpha=0.7, label='Medium (10-40%)'),
+                Patch(facecolor=high_color, edgecolor='none', alpha=0.7, label='High (>40%)')
+            ]
+            ax.legend(handles=legend_elements, loc='upper right')
             
-            # Add overlap statistics if available
-            if hasattr(self, 'overlap_stats') and self.overlap_stats:
-                stats_text = 'Overlap Statistics:\n'
-                stats_text += 'Avg: {:.1f}%\n'.format(self.overlap_stats['avg_overlap'])
-                stats_text += 'Median: {:.1f}%\n'.format(self.overlap_stats['median_overlap'])
-                stats_text += 'Range: {:.1f}%-{:.1f}%\n'.format(
-                    self.overlap_stats['min_overlap'], 
-                    self.overlap_stats['max_overlap']
-                )
-                stats_text += 'Image pairs: {}\n'.format(self.overlap_stats['total_pairs'])
-                stats_text += 'Low (<20%): {}\n'.format(self.overlap_stats['low_overlap'])
-                stats_text += 'Medium (20-60%): {}\n'.format(self.overlap_stats['medium_overlap'])
-                stats_text += 'High (>60%): {}'.format(self.overlap_stats['high_overlap'])
-                
-                ax.text(0.02, 0.98, stats_text, 
-                        transform=ax.transAxes, fontsize=9, 
-                        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            # Add overlap statistics
+            stats_text = 'Horizontal Overlap Statistics:\n'
+            stats_text += f'Pairs with overlap: {horizontal_overlap_stats["total_pairs"]}\n'
+            stats_text += f'Avg: {horizontal_overlap_stats["avg_overlap"]:.1f}%\n'
+            stats_text += f'Median: {horizontal_overlap_stats["median_overlap"]:.1f}%\n'
+            stats_text += f'Range: {horizontal_overlap_stats["min_overlap"]:.1f}% - {horizontal_overlap_stats["max_overlap"]:.1f}%\n'
+            stats_text += f'Low (<10%): {horizontal_overlap_stats["low_overlap"]}\n'
+            stats_text += f'Medium (10-40%): {horizontal_overlap_stats["medium_overlap"]}\n'
+            stats_text += f'High (>40%): {horizontal_overlap_stats["high_overlap"]}'
             
-            # Adjust layout
+            ax.text(0.02, 0.98, stats_text, 
+                    transform=ax.transAxes, fontsize=9, 
+                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
+            # Configure axis formatting to show full coordinate values
+            ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+            
+            # Rotate x-axis labels for better readability
+            plt.xticks(rotation=45, ha='right')
+            
+            # Adjust layout to accommodate the longer tick labels
             plt.tight_layout()
             
             # Save plot
             output_file = os.path.join(output_path, filename)
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            plt.close()
+            plt.close(fig)  # Explicitly close figure
             
-            print(f"Image overlap map saved to: {output_file}")
+            print(f"Horizontal overlap map saved to: {output_file}")
             return output_file
             
         except Exception as e:
-            print(f"Error creating overlap map: {e}")
+            print(f"Error creating horizontal overlap map: {e}")
+            import traceback
+            print(traceback.format_exc())
+            return None
+
+    @property
+    def overlap_stats(self):
+        """Backward compatibility property for vertical_overlap_stats"""
+        return self.vertical_overlap_stats
+
+    @overlap_stats.setter
+    def overlap_stats(self, value):
+        self.vertical_overlap_stats = value
+
+    def calculate_overall_overlap(self, footprints: List[Dict]) -> Dict:
+        """Calculate overlap between all image footprints"""
+        if not GEOPANDAS_AVAILABLE:
+            print("Geopandas not available. Cannot calculate overall overlap.")
+            return None
+            
+        if len(footprints) < 2:
+            print("Not enough images to calculate overall overlap.")
+            return None
+        
+        try:
+            print(f"\n*** STARTING OVERALL OVERLAP CALCULATION ***")
+            print(f"This may take a while for large datasets with {len(footprints)} images...")
+            
+            # Create Shapely polygons from vertices
+            polygons = []
+            for i, fp in enumerate(footprints):
+                poly = Polygon(fp['vertices'])
+                polygons.append({
+                    'index': i,
+                    'polygon': poly, 
+                    'footprint': fp,
+                    'overlap_count': 0,  # Will track number of other footprints overlapping this one
+                    'overlapping_indices': []  # Will track which footprints overlap with this one
+                })
+            
+            # Create R-tree spatial index for faster intersection queries
+            from rtree import index
+            idx = index.Index()
+            for i, poly_data in enumerate(polygons):
+                idx.insert(i, poly_data['polygon'].bounds)
+            
+            print(f"R-tree spatial index created. Beginning overlap detection...")
+            print(f"Progress will be reported every 50 images...")
+            
+            # Calculate all pairwise overlaps
+            total_checks = 0
+            total_overlaps = 0
+            
+            # Loop through all pairs of footprints
+            for i in range(len(polygons)):
+                current = polygons[i]
+                current_poly = current['polygon']
+                
+                # Get potential candidates from spatial index instead of checking all
+                candidates = list(idx.intersection(current_poly.bounds))
+                
+                # Compare only with potential candidates
+                for j in candidates:
+                    # Skip self-comparison
+                    if i == j:
+                        continue
+                        
+                    total_checks += 1
+                    other = polygons[j]
+                    
+                    # First check if bounding boxes overlap (quick test)
+                    if current_poly.intersects(other['polygon']):
+                        current['overlap_count'] += 1
+                        current['overlapping_indices'].append(j)
+                        total_overlaps += 1
+                        
+                # Show progress more frequently
+                if i % 50 == 0 and i > 0:
+                    print(f"  Processed {i}/{len(polygons)} images, found {total_overlaps} overlaps so far")
+            
+            print(f"Overall overlap calculation complete.")
+            
+            # Extract overlap counts and statistics
+            overlap_counts = [p['overlap_count'] for p in polygons]
+            
+            # Calculate statistics
+            avg_count = np.mean(overlap_counts)
+            median_count = np.median(overlap_counts)
+            min_count = np.min(overlap_counts)
+            max_count = np.max(overlap_counts)
+            
+            print(f"\nOverall Overlap Statistics:")
+            print(f"  Total pairs checked: {total_checks}")
+            print(f"  Total overlapping pairs: {total_overlaps}")
+            print(f"  Average overlap count per image: {avg_count:.2f}")
+            print(f"  Median overlap count: {median_count:.2f}")
+            print(f"  Minimum overlap count: {min_count}")
+            print(f"  Maximum overlap count: {max_count}")
+            
+            # Store the results
+            self.overall_overlap_stats = {
+                'avg_count': avg_count,
+                'median_count': median_count,
+                'min_count': min_count,
+                'max_count': max_count,
+                'total_checks': total_checks,
+                'total_overlaps': total_overlaps,
+                'polygons': polygons  # Store for mapping
+            }
+            
+            return self.overall_overlap_stats
+            
+        except Exception as e:
+            print(f"Error calculating overall overlap: {e}")
+            import traceback
+            print(traceback.format_exc())
+            return None
+
+    def create_overall_overlap_map(self, footprints: List[Dict], output_path: str, 
+                                   filename: str = "overall_overlap_map.png") -> Optional[str]:
+        """
+        Create a map showing overall overlap counts with rainbow color gradient
+        
+        Args:
+            footprints: List of dictionaries with footprint data
+            output_path: Directory to save the output files
+            filename: Filename for the generated map
+            
+        Returns:
+            Path to the saved plot file, or None if no data or error
+        """
+        print("\n*** STARTING OVERALL OVERLAP MAP GENERATION ***")
+        print("Creating map of total overlap counts for all images...")
+        
+        if not GEOPANDAS_AVAILABLE:
+            print("Geopandas not available. Cannot create overall overlap map.")
+            return None
+        
+        # Calculate overall overlap if not already done
+        if not hasattr(self, 'overall_overlap_stats') or not self.overall_overlap_stats:
+            overall_overlap_stats = self.calculate_overall_overlap(footprints)
+            if not overall_overlap_stats:
+                print("Failed to calculate overall overlap.")
+                return None
+        else:
+            overall_overlap_stats = self.overall_overlap_stats
+            print("Using previously calculated overall overlap statistics.")
+        
+        try:
+            print("Generating visualization of overlap counts...")
+            # Use non-interactive backend to avoid threading issues
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.colors as mcolors
+            
+            # Create figure for plotting
+            fig, ax = plt.subplots(figsize=(14, 12))
+            
+            # Get polygons with overlap counts
+            polygons = overall_overlap_stats['polygons']
+            
+            # Create a rainbow colormap from blue/purple (high) to red (low)
+            # This reverses the usual rainbow order to have purple as highest
+            cmap = plt.cm.rainbow_r
+            
+            # Determine color normalization based on overlap count range
+            min_count = overall_overlap_stats['min_count']
+            max_count = overall_overlap_stats['max_count']
+            
+            # Create a normalization that handles the case where min=max
+            if min_count == max_count:
+                norm = mcolors.Normalize(vmin=min_count-0.5, vmax=max_count+0.5)
+            else:
+                norm = mcolors.Normalize(vmin=min_count, vmax=max_count)
+            
+            # Plot each footprint with color based on overlap count
+            for poly_data in polygons:
+                count = poly_data['overlap_count']
+                polygon = poly_data['polygon']
+                
+                # Get color from colormap
+                color = cmap(norm(count))
+                
+                # Plot polygon
+                x, y = polygon.exterior.xy
+                ax.fill(x, y, alpha=0.7, edgecolor='black', linewidth=0.5, facecolor=color)
+                
+                # Add count label for larger polygons
+                if polygon.area > 0.0001:
+                    centroid = polygon.centroid
+                    ax.text(centroid.x, centroid.y, str(count), 
+                           fontsize=8, ha='center', va='center', color='white',
+                           bbox=dict(facecolor='black', alpha=0.5, pad=1, boxstyle='round,pad=0.2'))
+            
+            # Set labels and title
+            ax.set_xlabel('Longitude (Decimal Degrees)')
+            ax.set_ylabel('Latitude (Decimal Degrees)')
+            ax.set_title('Overall Image Overlap Count')
+            
+            # Add grid
+            ax.grid(True, linestyle='--', alpha=0.3)
+            
+            # Add a colorbar
+            sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+            sm.set_array([])  # ScalarMappable needs an array for the colorbar
+            cbar = plt.colorbar(sm, ax=ax)
+            cbar.set_label('Number of Overlapping Images')
+            
+            # Add overlap statistics
+            stats_text = 'Overall Overlap Statistics:\n'
+            stats_text += f'Avg overlaps: {overall_overlap_stats["avg_count"]:.1f} images\n'
+            stats_text += f'Median: {overall_overlap_stats["median_count"]:.1f} images\n'
+            stats_text += f'Range: {overall_overlap_stats["min_count"]} to {overall_overlap_stats["max_count"]} images\n'
+            
+            ax.text(0.02, 0.98, stats_text, 
+                    transform=ax.transAxes, fontsize=9, 
+                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
+            # Configure axis formatting to show full coordinate values
+            ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+            
+            # Rotate x-axis labels for better readability
+            plt.xticks(rotation=45, ha='right')
+            
+            # Adjust layout to accommodate the longer tick labels
+            plt.tight_layout()
+            
+            # Save plot
+            output_file = os.path.join(output_path, filename)
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close(fig)  # Explicitly close figure
+            
+            print(f"Overall overlap map saved to: {output_file}")
+            return output_file
+            
+        except Exception as e:
+            print(f"Error creating overall overlap map: {e}")
             import traceback
             print(traceback.format_exc())
             return None

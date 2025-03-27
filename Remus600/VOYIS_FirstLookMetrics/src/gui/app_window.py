@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 import os
 import threading
+import builtins
 from tkinter import scrolledtext
 from models.metrics import Metrics
 from models.altitude_map import GEOPANDAS_AVAILABLE, AltitudeMap
@@ -21,9 +22,16 @@ class AppWindow:
         self.basic_metrics_var = tk.BooleanVar(value=True)
         self.location_map_var = tk.BooleanVar(value=True)
         self.histogram_var = tk.BooleanVar(value=True)
-        self.footprint_map_var = tk.BooleanVar(value=False)
+        self.footprint_map_var = tk.BooleanVar(value=True)
         self.nav_path = tk.StringVar()
         self.threshold_var = tk.StringVar(value="9.0")  # String for text entry
+        
+        # Set all functions to True if all individual options are True
+        if all([self.basic_metrics_var.get(), self.location_map_var.get(),
+                self.histogram_var.get(), self.footprint_map_var.get()]):
+            self.all_var.set(True)
+        else:
+            self.all_var.set(False)
         
         # Create GUI elements
         self.create_frames()
@@ -39,6 +47,9 @@ class AppWindow:
         self.create_input_section()
         self.create_functions_section()
         self.create_log_section()
+        
+        # Make sure the navigation file selection is visible if footprint map is checked by default
+        self.update_nav_file_visibility()
 
     def toggle_all_functions(self):
         """Toggle all function checkboxes based on 'All Functions' checkbox"""
@@ -265,22 +276,50 @@ class AppWindow:
                         
                         self.log_message(f"Generating footprint map with {len(self.metrics.gps_data)} images (altitude threshold: {self.altitude_threshold:.1f}m)...")
                         
-                        map_file = self.footprint_map.create_footprint_map(
-                            self.metrics.gps_data,
-                            output_folder,
-                            nav_file_path=nav_file
-                        )
+                        # Redirect print statements to also go to the log
+                        # Store the original print function
+                        original_print = print
                         
-                        # After creating the footprint map, get the overlap statistics
-                        if hasattr(self.footprint_map, 'overlap_stats') and self.footprint_map.overlap_stats:
-                            # Transfer overlap stats to metrics object
-                            self.metrics.overlap_stats = self.footprint_map.overlap_stats
+                        # Define a new print function that logs to our GUI
+                        def logging_print(*args, **kwargs):
+                            # Call the original print function
+                            original_print(*args, **kwargs)
+                            # Also log to our GUI
+                            message = " ".join(str(arg) for arg in args)
+                            self.log_message(message)
                         
-                        if map_file:
-                            self.log_message(f"Footprint map saved to: {map_file}")
-                            self.log_message("CSV and shapefile with footprint data also created in the same folder.")
-                        else:
-                            self.log_message("Error: Could not create footprint map.")
+                        # Replace the built-in print function temporarily
+                        builtins.print = logging_print
+                        
+                        try:
+                            # Generate the footprint map
+                            map_file = self.footprint_map.create_footprint_map(
+                                self.metrics.gps_data,
+                                output_folder,
+                                nav_file_path=nav_file
+                            )
+                            
+                            # Transfer overlap stats
+                            if hasattr(self.footprint_map, 'vertical_overlap_stats'):
+                                self.metrics.vertical_overlap_stats = self.footprint_map.vertical_overlap_stats
+                                
+                            if hasattr(self.footprint_map, 'horizontal_overlap_stats'):
+                                self.metrics.horizontal_overlap_stats = self.footprint_map.horizontal_overlap_stats
+                                
+                            if hasattr(self.footprint_map, 'overall_overlap_stats'):
+                                self.metrics.overall_overlap_stats = self.footprint_map.overall_overlap_stats
+                            
+                            # Log results
+                            if map_file:
+                                self.log_message(f"Footprint map saved to: {map_file}")
+                                self.log_message("CSV and shapefile with footprint data also created in the same folder.")
+                            else:
+                                self.log_message("Error: Could not create footprint map.")
+                                
+                        finally:
+                            # Restore the original print function
+                            builtins.print = original_print
+                            
                     except Exception as e:
                         self.log_message(f"Error creating footprint map: {str(e)}")
                         import traceback
@@ -383,7 +422,7 @@ class AppWindow:
         # Individual functions checkboxes
         self.basic_metrics_check = ttk.Checkbutton(
             self.functions_frame,
-            text="Basic Metrics (CSV)",
+            text="Basic Metrics",
             variable=self.basic_metrics_var,
             command=self.update_all_checkbox
         )
@@ -391,7 +430,7 @@ class AppWindow:
         
         self.location_map_check = ttk.Checkbutton(
             self.functions_frame,
-            text="Location Map (GIS Export)",
+            text="Image Location Map",
             variable=self.location_map_var,
             command=self.update_all_checkbox
         )
@@ -399,7 +438,7 @@ class AppWindow:
         
         self.histogram_check = ttk.Checkbutton(
             self.functions_frame,
-            text="Altitude Histogram (Processed Images)",
+            text="Image Altitude Histogram",
             variable=self.histogram_var,
             command=self.update_all_checkbox
         )
@@ -407,7 +446,7 @@ class AppWindow:
         
         self.footprint_map_check = ttk.Checkbutton(
             self.functions_frame,
-            text="Image Footprint Map",
+            text="Image Footprint and Overlap Maps (Requires Vehicle Navigation File)",
             variable=self.footprint_map_var,
             command=self.update_all_checkbox
         )

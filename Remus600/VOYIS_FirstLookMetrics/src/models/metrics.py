@@ -24,8 +24,15 @@ class Metrics:
         # Save the altitude threshold
         self.altitude_threshold = altitude_threshold
         
-        # Initialize overlap_stats (will be set from footprint_map if available)
-        self.overlap_stats = None
+        # Initialize overlap statistics (will be set from footprint_map if available)
+        self.vertical_overlap_stats = None
+        self.horizontal_overlap_stats = None
+        self.overall_overlap_stats = None
+        
+        # Track images with issues
+        self.no_gps_images = []
+        self.above_threshold_images = []
+        self.above_threshold_values = {}
         
         # Patterns for recognizing files
         self.raw_pattern = re.compile(r'ESC_stills_raw_PPS_')
@@ -186,19 +193,46 @@ class Metrics:
                     "(No altitude data available in the GPS information)"
                 ])
         
-        # Add image overlap statistics if available
-        if hasattr(self, 'overlap_stats') and self.overlap_stats:
+        # Add vertical overlap statistics if available
+        if hasattr(self, 'vertical_overlap_stats') and self.vertical_overlap_stats:
             report.extend([
                 "",
-                "Image Overlap Statistics:",
-                "-------------------------",
-                f"Average overlap: {self.overlap_stats['avg_overlap']:.1f}%",
-                f"Median overlap: {self.overlap_stats['median_overlap']:.1f}%",
-                f"Overlap range: {self.overlap_stats['min_overlap']:.1f}% to {self.overlap_stats['max_overlap']:.1f}%",
-                f"Low overlap (<20%): {self.overlap_stats['low_overlap']} image pairs",
-                f"Medium overlap (20-60%): {self.overlap_stats['medium_overlap']} image pairs",
-                f"High overlap (>60%): {self.overlap_stats['high_overlap']} image pairs",
-                f"Total image pairs analyzed: {self.overlap_stats['total_pairs']}"
+                "Vertical Overlap Statistics (Sequential Images):",
+                "--------------------------------------------",
+                f"Average overlap: {self.vertical_overlap_stats['avg_overlap']:.1f}%",
+                f"Median overlap: {self.vertical_overlap_stats['median_overlap']:.1f}%",
+                f"Overlap range: {self.vertical_overlap_stats['min_overlap']:.1f}% to {self.vertical_overlap_stats['max_overlap']:.1f}%",
+                f"Low overlap (<40%): {self.vertical_overlap_stats['low_overlap']} image pairs",
+                f"Medium overlap (40-70%): {self.vertical_overlap_stats['medium_overlap']} image pairs",
+                f"High overlap (>70%): {self.vertical_overlap_stats['high_overlap']} image pairs",
+                f"Total image pairs analyzed: {self.vertical_overlap_stats['total_pairs']}"
+            ])
+        
+        # Add horizontal overlap statistics if available
+        if hasattr(self, 'horizontal_overlap_stats') and self.horizontal_overlap_stats:
+            report.extend([
+                "",
+                "Horizontal Overlap Statistics (Between Survey Lines):",
+                "------------------------------------------------",
+                f"Average overlap: {self.horizontal_overlap_stats['avg_overlap']:.1f}%",
+                f"Median overlap: {self.horizontal_overlap_stats['median_overlap']:.1f}%",
+                f"Overlap range: {self.horizontal_overlap_stats['min_overlap']:.1f}% to {self.horizontal_overlap_stats['max_overlap']:.1f}%",
+                f"Low overlap (<10%): {self.horizontal_overlap_stats['low_overlap']} image pairs",
+                f"Medium overlap (10-40%): {self.horizontal_overlap_stats['medium_overlap']} image pairs",
+                f"High overlap (>40%): {self.horizontal_overlap_stats['high_overlap']} image pairs",
+                f"Total image pairs with overlap: {self.horizontal_overlap_stats['total_pairs']} (of {self.horizontal_overlap_stats.get('total_checks', 'N/A')} possible pairs)"
+            ])
+        
+        # Add overall overlap statistics if available
+        if hasattr(self, 'overall_overlap_stats') and self.overall_overlap_stats:
+            report.extend([
+                "",
+                "Overall Overlap Statistics (All Overlapping Images):",
+                "-------------------------------------------------",
+                f"Average overlapping images: {self.overall_overlap_stats['avg_count']:.1f} per footprint",
+                f"Median overlapping images: {self.overall_overlap_stats['median_count']:.1f} per footprint",
+                f"Range: {self.overall_overlap_stats['min_count']} to {self.overall_overlap_stats['max_count']} overlapping images",
+                f"Total overlapping pairs: {self.overall_overlap_stats['total_overlaps']} (of {self.overall_overlap_stats.get('total_checks', 'N/A')} possible pairs)"
             ])
         
         return report

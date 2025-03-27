@@ -131,7 +131,14 @@ class AltitudeMap:
                 transform=ax.transAxes, fontsize=9, 
                 verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         
-        # Adjust layout
+        # Configure axis formatting to show full coordinate values
+        plt.gca().xaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+        plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda x, pos: f"{x:.6f}"))
+        
+        # Rotate x-axis labels for better readability
+        plt.xticks(rotation=45, ha='right')
+        
+        # Adjust layout to accommodate the longer tick labels
         plt.tight_layout()
         
         # Save plot
