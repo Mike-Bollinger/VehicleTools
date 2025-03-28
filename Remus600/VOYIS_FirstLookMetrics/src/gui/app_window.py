@@ -7,6 +7,7 @@ from tkinter import scrolledtext
 from models.metrics import Metrics
 from models.altitude_map import GEOPANDAS_AVAILABLE, AltitudeMap
 from src.models.footprint_map import FootprintMap
+from src.models.visibility_analyzer import VisibilityAnalyzer
 from datetime import datetime
 
 class AppWindow:
@@ -42,6 +43,10 @@ class AppWindow:
         self.altitude_map.altitude_threshold = self.altitude_threshold
         self.footprint_map = FootprintMap()
         self.footprint_map.altitude_threshold = self.altitude_threshold
+        
+        # Add visibility analyzer
+        self.visibility_analyzer = VisibilityAnalyzer()
+        self.visibility_analyzer.altitude_threshold = self.altitude_threshold
         
         # Create the rest of the UI components
         self.create_input_section()
@@ -309,6 +314,9 @@ class AppWindow:
                             if hasattr(self.footprint_map, 'overall_overlap_stats'):
                                 self.metrics.overall_overlap_stats = self.footprint_map.overall_overlap_stats
                             
+                            # Append updated metrics with overlap information to the metrics file
+                            self.append_overlap_metrics_to_file(output_folder)
+                            
                             # Log results
                             if map_file:
                                 self.log_message(f"Footprint map saved to: {map_file}")
@@ -325,6 +333,88 @@ class AppWindow:
                         import traceback
                         self.log_message(traceback.format_exc())
             
+            # Step 5: Run visibility analysis if selected
+            if self.visibility_analyzer_var.get():
+                self.log_message("Starting image visibility analysis...")
+                
+                if not self.visibility_analyzer.tf_available:
+                    self.log_message("WARNING: TensorFlow not available. Cannot perform visibility analysis.")
+                    self.log_message("Please install TensorFlow with: pip install tensorflow")
+                else:
+                    try:
+                        # First, check if we have images to analyze
+                        if not self.metrics.gps_data:
+                            self.log_message("Error: No image data available for visibility analysis.")
+                        else:
+                            # Ask user to select a model or training data
+                            model_path = filedialog.askopenfilename(
+                                title="Select Visibility Model or Training Data",
+                                filetypes=[("Model files", "*.h5"), ("All files", "*.*")]
+                            )
+                            
+                            if not model_path:
+                                # If no file selected, ask for a directory
+                                model_path = filedialog.askdirectory(
+                                    title="Select Training Data Directory"
+                                )
+                                
+                            if not model_path:
+                                self.log_message("Visibility analysis cancelled by user.")
+                            else:
+                                # Load or train model
+                                self.log_message(f"Loading or training visibility model from: {model_path}")
+                                success = self.visibility_analyzer.load_or_train_model(
+                                    model_path, 
+                                    progress_callback=self.update_progress
+                                )
+                                
+                                if not success:
+                                    self.log_message("Error: Could not load or train visibility model.")
+                                else:
+                                    # Save the model if we trained a new one
+                                    if os.path.isdir(model_path):
+                                        model_save_path = os.path.join(output_folder, "visibility_model.h5")
+                                        saved_path = self.visibility_analyzer.save_model(model_save_path)
+                                        if saved_path:
+                                            self.log_message(f"Trained model saved to: {saved_path}")
+                                    
+                                    # Collect image paths
+                                    image_paths = []
+                                    for gps_item in self.metrics.gps_data:
+                                        if 'filename' in gps_item and os.path.exists(os.path.join(input_folder, gps_item['filename'])):
+                                            # Only include images below altitude threshold
+                                            if 'altitude' in gps_item and gps_item['altitude'] <= self.altitude_threshold:
+                                                image_paths.append(os.path.join(input_folder, gps_item['filename']))
+                                    
+                                    if not image_paths:
+                                        self.log_message("Error: No valid images found for visibility analysis.")
+                                    else:
+                                        # Analyze images
+                                        self.log_message(f"Analyzing visibility of {len(image_paths)} images...")
+                                        success, stats = self.visibility_analyzer.analyze_images(
+                                            image_paths,
+                                            output_folder,
+                                            progress_callback=self.update_progress
+                                        )
+                                        
+                                        if not success:
+                                            self.log_message("Error during visibility analysis.")
+                                        else:
+                                            # Show results
+                                            self.log_message(f"Visibility analysis complete. Results saved to {output_folder}")
+                                            
+                                            # Display summary in log
+                                            for line in self.visibility_analyzer.get_summary_report():
+                                                self.log_message(line)
+                                            
+                                            # Append to metrics file
+                                            self.append_visibility_metrics_to_file(output_folder)
+                    
+                    except Exception as e:
+                        self.log_message(f"Error during visibility analysis: {str(e)}")
+                        import traceback
+                        self.log_message(traceback.format_exc())
+            
             self.log_message("All selected processing tasks completed successfully.")
             
         except Exception as e:
@@ -334,6 +424,92 @@ class AppWindow:
         finally:
             # Re-enable the process button
             self.master.after(0, lambda: self.process_button.configure(state=tk.NORMAL))
+
+    def append_overlap_metrics_to_file(self, output_folder: str):
+        """
+        Append overlap metrics to the existing metrics text file
+        
+        Args:
+            output_folder: Directory where the metrics file is located
+        """
+        metrics_file = os.path.join(output_folder, "image_metrics.txt")
+        
+        if not os.path.exists(metrics_file):
+            self.log_message("Warning: Metrics file not found. Creating new file with overlap metrics.")
+            
+        try:
+            # Get only the overlap-related metrics
+            overlap_metrics = []
+            
+            if hasattr(self.metrics, 'vertical_overlap_stats') and self.metrics.vertical_overlap_stats:
+                overlap_metrics.append("\n\n--- OVERLAP METRICS ---\n")
+                overlap_metrics.append("\nVertical Overlap Statistics (Sequential Images):")
+                overlap_metrics.append("-" * 45)
+                overlap_metrics.append(f"Average overlap: {self.metrics.vertical_overlap_stats['avg_overlap']:.1f}%")
+                overlap_metrics.append(f"Median overlap: {self.metrics.vertical_overlap_stats['median_overlap']:.1f}%")
+                overlap_metrics.append(f"Overlap range: {self.metrics.vertical_overlap_stats['min_overlap']:.1f}% to {self.metrics.vertical_overlap_stats['max_overlap']:.1f}%")
+                overlap_metrics.append(f"Low overlap (<40%): {self.metrics.vertical_overlap_stats['low_overlap']} image pairs")
+                overlap_metrics.append(f"Medium overlap (40-70%): {self.metrics.vertical_overlap_stats['medium_overlap']} image pairs")
+                overlap_metrics.append(f"High overlap (>70%): {self.metrics.vertical_overlap_stats['high_overlap']} image pairs")
+                overlap_metrics.append(f"Total image pairs analyzed: {self.metrics.vertical_overlap_stats['total_overlap_count']}")
+            
+            if hasattr(self.metrics, 'horizontal_overlap_stats') and self.metrics.horizontal_overlap_stats:
+                overlap_metrics.append("\nHorizontal Overlap Statistics (Between Survey Lines):")
+                overlap_metrics.append("-" * 50)
+                overlap_metrics.append(f"Average overlap: {self.metrics.horizontal_overlap_stats['avg_overlap']:.1f}%")
+                overlap_metrics.append(f"Median overlap: {self.metrics.horizontal_overlap_stats['median_overlap']:.1f}%")
+                overlap_metrics.append(f"Overlap range: {self.metrics.horizontal_overlap_stats['min_overlap']:.1f}% to {self.metrics.horizontal_overlap_stats['max_overlap']:.1f}%")
+                overlap_metrics.append(f"Low overlap (<10%): {self.metrics.horizontal_overlap_stats['low_overlap']} image pairs")
+                overlap_metrics.append(f"Medium overlap (10-40%): {self.metrics.horizontal_overlap_stats['medium_overlap']} image pairs")
+                overlap_metrics.append(f"High overlap (>40%): {self.metrics.horizontal_overlap_stats['high_overlap']} image pairs")
+                overlap_metrics.append(f"Total image pairs with overlap: {self.metrics.horizontal_overlap_stats['total_overlap_count']} (of {self.metrics.horizontal_overlap_stats.get('total_checks', 'N/A')} possible pairs)")
+            
+            if hasattr(self.metrics, 'overall_overlap_stats') and self.metrics.overall_overlap_stats:
+                overlap_metrics.append("\nOverall Overlap Statistics (All Overlapping Images):")
+                overlap_metrics.append("-" * 49)
+                overlap_metrics.append(f"Average overlapping images: {self.metrics.overall_overlap_stats['avg_count']:.1f} per footprint")
+                overlap_metrics.append(f"Median overlapping images: {self.metrics.overall_overlap_stats['median_count']:.1f} per footprint")
+                overlap_metrics.append(f"Range: {self.metrics.overall_overlap_stats['min_count']} to {self.metrics.overall_overlap_stats['max_count']} overlapping images")
+                overlap_metrics.append(f"Total overlapping pairs: {self.metrics.overall_overlap_stats['total_overlaps']} (of {self.metrics.overall_overlap_stats.get('total_checks', 'N/A')} possible pairs)")
+            
+            # Only proceed if we have overlap metrics to append
+            if overlap_metrics:
+                with open(metrics_file, 'a') as f:
+                    f.write("\n".join(overlap_metrics))
+                self.log_message("Overlap metrics appended to image_metrics.txt")
+            
+        except Exception as e:
+            self.log_message(f"Error appending overlap metrics to file: {str(e)}")
+            import traceback
+            self.log_message(traceback.format_exc())
+
+    def append_visibility_metrics_to_file(self, output_folder: str):
+        """
+        Append visibility metrics to the existing metrics text file
+        
+        Args:
+            output_folder: Directory where the metrics file is located
+        """
+        metrics_file = os.path.join(output_folder, "image_metrics.txt")
+        
+        if not os.path.exists(metrics_file):
+            self.log_message("Warning: Metrics file not found. Creating new file with visibility metrics.")
+            
+        try:
+            # Get visibility metrics
+            visibility_metrics = self.visibility_analyzer.get_summary_report()
+            
+            # Only proceed if we have metrics to append
+            if visibility_metrics:
+                with open(metrics_file, 'a') as f:
+                    f.write("\n\n--- VISIBILITY METRICS ---\n")
+                    f.write("\n".join(visibility_metrics))
+                self.log_message("Visibility metrics appended to image_metrics.txt")
+            
+        except Exception as e:
+            self.log_message(f"Error appending visibility metrics to file: {str(e)}")
+            import traceback
+            self.log_message(traceback.format_exc())
 
     def threshold_changed(self, *args):
         """Update the altitude threshold when the slider is moved"""
@@ -411,6 +587,13 @@ class AppWindow:
     def create_functions_section(self):
         """Create the functions selection checkbox widgets"""
         # "All Functions" checkbox
+        self.all_var = tk.BooleanVar(value=True)
+        self.basic_metrics_var = tk.BooleanVar(value=True)
+        self.location_map_var = tk.BooleanVar(value=True)
+        self.histogram_var = tk.BooleanVar(value=True)
+        self.footprint_map_var = tk.BooleanVar(value=True)
+        self.visibility_analyzer_var = tk.BooleanVar(value=False)  # Off by default
+
         self.all_check = ttk.Checkbutton(
             self.functions_frame,
             text="All Functions",
@@ -462,6 +645,70 @@ class AppWindow:
         self.nav_entry.grid(row=0, column=1, padx=(5, 5), sticky='ew')
         self.nav_button = ttk.Button(self.nav_file_frame, text="Browse...", command=self.select_nav_file)
         self.nav_button.grid(row=0, column=2)
+
+        # Add the method for creating the altitude threshold control
+        self.create_threshold_control()
+        
+        # Add visibility analyzer checkbox
+        self.visibility_analyzer_check = ttk.Checkbutton(
+            self.functions_frame,
+            text="Analyze Image Visibility",
+            variable=self.visibility_analyzer_var,
+            command=self.update_visibility_sections
+        )
+        self.visibility_analyzer_check.grid(row=6, column=0, sticky='w', padx=25, pady=2)
+        
+        # Add frames for visibility analyzer model selection
+        self.visibility_model_frame = ttk.Frame(self.functions_frame)
+        self.visibility_model_frame.grid(row=7, column=0, sticky='w', padx=45, pady=(0, 5))
+        self.visibility_model_frame.grid_remove()  # Hide it initially
+        
+        # Model selection radio buttons
+        self.model_type_var = tk.StringVar(value="model")
+        
+        ttk.Radiobutton(
+            self.visibility_model_frame,
+            text="Pre-trained Model",
+            variable=self.model_type_var,
+            value="model"
+        ).grid(row=0, column=0, sticky='w', padx=(0, 5))
+        
+        # Model path
+        self.model_path = tk.StringVar()
+        self.model_entry = ttk.Entry(self.visibility_model_frame, textvariable=self.model_path, width=30)
+        self.model_entry.grid(row=0, column=1, padx=(5, 5), sticky='ew')
+        self.model_button = ttk.Button(
+            self.visibility_model_frame, 
+            text="Browse...", 
+            command=lambda: self.select_visibility_file("model")
+        )
+        self.model_button.grid(row=0, column=2)
+        
+        # Training data selection
+        ttk.Radiobutton(
+            self.visibility_model_frame,
+            text="Training Data",
+            variable=self.model_type_var,
+            value="training"
+        ).grid(row=1, column=0, sticky='w', padx=(0, 5))
+        
+        # Training path
+        self.training_path = tk.StringVar()
+        self.training_entry = ttk.Entry(self.visibility_model_frame, textvariable=self.training_path, width=30)
+        self.training_entry.grid(row=1, column=1, padx=(5, 5), sticky='ew')
+        self.training_button = ttk.Button(
+            self.visibility_model_frame, 
+            text="Browse...", 
+            command=lambda: self.select_visibility_file("training")
+        )
+        self.training_button.grid(row=1, column=2)
+        
+        # Add a note about computational intensity
+        ttk.Label(
+            self.functions_frame,
+            text="(Visibility analysis is computationally intensive and may take a long time)",
+            font=("", 8, "italic"),
+        ).grid(row=8, column=0, sticky="w", padx=25, pady=(0, 10))
         
         # Add the method for creating the altitude threshold control
         self.create_threshold_control()
@@ -472,7 +719,38 @@ class AppWindow:
             text="Process Images",
             command=self.process_images
         )
-        self.process_button.pack(pady=10)
+        self.process_button.grid(row=0, column=0)
+
+    def select_visibility_file(self, file_type):
+        """Select model file or training data directory for visibility analyzer"""
+        if file_type == "model":
+            file_path = filedialog.askopenfilename(
+                title="Select Pre-trained Visibility Model",
+                filetypes=[("Model files", "*.h5"), ("All files", "*.*")]
+            )
+            if file_path:
+                self.model_path.set(file_path)
+                self.training_path.set("")  # Clear the other path
+                self.model_type_var.set("model")
+                self.log_message(f"Visibility model file set to: {file_path}")
+        else:  # training data
+            folder_path = filedialog.askdirectory(
+                title="Select Visibility Training Data Directory"
+            )
+            if folder_path:
+                self.training_path.set(folder_path)
+                self.model_path.set("")  # Clear the other path
+                self.model_type_var.set("training")
+                self.log_message(f"Visibility training data directory set to: {folder_path}")
+
+    def update_visibility_sections(self):
+        """Show or hide visibility file selections based on visibility analyzer checkbox"""
+        if self.visibility_analyzer_var.get():
+            self.visibility_model_frame.grid()
+        else:
+            self.visibility_model_frame.grid_remove()
+        
+        self.update_all_checkbox()
 
     def create_log_section(self):
         """Create the log output and progress widgets"""
@@ -506,7 +784,7 @@ class AppWindow:
     def create_threshold_control(self):
         """Create the altitude threshold entry box and label"""
         threshold_frame = ttk.Frame(self.functions_frame)
-        threshold_frame.grid(row=6, column=0, sticky='ew', pady=(10, 5))
+        threshold_frame.grid(row=8, column=0, sticky='ew', pady=(10, 5))
         
         ttk.Label(threshold_frame, text="Altitude Threshold (m):").grid(row=0, column=0, sticky='w')
         
@@ -522,7 +800,7 @@ class AppWindow:
             self.functions_frame, 
             text="(Altitude threshold filters out images that are too high to see the seabed)",
             font=("", 8, "italic")
-        ).grid(row=7, column=0, sticky='w', pady=(0, 10), padx=25)
+        ).grid(row=9, column=0, sticky='w', pady=(0, 10), padx=25)
 
     def update_threshold(self):
         """Update altitude threshold when Apply button is clicked"""

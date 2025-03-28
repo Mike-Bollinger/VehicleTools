@@ -193,76 +193,87 @@ class Metrics:
                     "(No altitude data available in the GPS information)"
                 ])
         
-        # Add vertical overlap statistics if available
-        if hasattr(self, 'vertical_overlap_stats') and self.vertical_overlap_stats:
-            report.extend([
-                "",
-                "Vertical Overlap Statistics (Sequential Images):",
-                "--------------------------------------------",
-                f"Average overlap: {self.vertical_overlap_stats['avg_overlap']:.1f}%",
-                f"Median overlap: {self.vertical_overlap_stats['median_overlap']:.1f}%",
-                f"Overlap range: {self.vertical_overlap_stats['min_overlap']:.1f}% to {self.vertical_overlap_stats['max_overlap']:.1f}%",
-                f"Low overlap (<40%): {self.vertical_overlap_stats['low_overlap']} image pairs",
-                f"Medium overlap (40-70%): {self.vertical_overlap_stats['medium_overlap']} image pairs",
-                f"High overlap (>70%): {self.vertical_overlap_stats['high_overlap']} image pairs",
-                f"Total image pairs analyzed: {self.vertical_overlap_stats['total_pairs']}"
-            ])
-        
-        # Add horizontal overlap statistics if available
-        if hasattr(self, 'horizontal_overlap_stats') and self.horizontal_overlap_stats:
-            report.extend([
-                "",
-                "Horizontal Overlap Statistics (Between Survey Lines):",
-                "------------------------------------------------",
-                f"Average overlap: {self.horizontal_overlap_stats['avg_overlap']:.1f}%",
-                f"Median overlap: {self.horizontal_overlap_stats['median_overlap']:.1f}%",
-                f"Overlap range: {self.horizontal_overlap_stats['min_overlap']:.1f}% to {self.horizontal_overlap_stats['max_overlap']:.1f}%",
-                f"Low overlap (<10%): {self.horizontal_overlap_stats['low_overlap']} image pairs",
-                f"Medium overlap (10-40%): {self.horizontal_overlap_stats['medium_overlap']} image pairs",
-                f"High overlap (>40%): {self.horizontal_overlap_stats['high_overlap']} image pairs",
-                f"Total image pairs with overlap: {self.horizontal_overlap_stats['total_pairs']} (of {self.horizontal_overlap_stats.get('total_checks', 'N/A')} possible pairs)"
-            ])
-        
-        # Add overall overlap statistics if available
-        if hasattr(self, 'overall_overlap_stats') and self.overall_overlap_stats:
-            report.extend([
-                "",
-                "Overall Overlap Statistics (All Overlapping Images):",
-                "-------------------------------------------------",
-                f"Average overlapping images: {self.overall_overlap_stats['avg_count']:.1f} per footprint",
-                f"Median overlapping images: {self.overall_overlap_stats['median_count']:.1f} per footprint",
-                f"Range: {self.overall_overlap_stats['min_count']} to {self.overall_overlap_stats['max_count']} overlapping images",
-                f"Total overlapping pairs: {self.overall_overlap_stats['total_overlaps']} (of {self.overall_overlap_stats.get('total_checks', 'N/A')} possible pairs)"
-            ])
-        
+             
         return report
     
     def extract_gps_from_image(self, image_path: str) -> Optional[Dict]:
         """
-        Extract GPS information from image EXIF data
+        Extract GPS information and camera parameters from image EXIF data
         
         Args:
             image_path: Path to the image file
             
         Returns:
-            Dictionary with latitude, longitude, and altitude if available, None otherwise
+            Dictionary with location and camera parameters if available, None otherwise
         """
         if not PIL_AVAILABLE:
             return None
             
         try:
             with Image.open(image_path) as img:
-                if not hasattr(img, '_getexif') or img._getexif() is None:
-                    return None
+                # Get image dimensions directly from the image
+                width, height = img.size
                 
+                # Start with base info including dimensions
+                result = {
+                    'width': width,
+                    'height': height
+                }
+                
+                # If no EXIF data available, return just the dimensions
+                if not hasattr(img, '_getexif') or img._getexif() is None:
+                    return result
+                
+                # Extract all EXIF data
                 exif_data = {
                     TAGS.get(tag, tag): value
                     for tag, value in img._getexif().items()
                 }
                 
-                if 'GPSInfo' not in exif_data:
-                    return None
+                # Extract camera parameters
+                # ExposureTime
+                if 'ExposureTime' in exif_data:
+                    exposure = exif_data['ExposureTime']
+                    if isinstance(exposure, tuple) and len(exposure) == 2:
+                        result['ExposureTime'] = f"{exposure[0]}/{exposure[1]}"
+                    else:
+                        result['ExposureTime'] = str(exposure)
                 
+                # FNumber
+                if 'FNumber' in exif_data:
+                    fnumber = exif_data['FNumber']
+                    if isinstance(fnumber, tuple) and len(fnumber) == 2:
+                        result['FNumber'] = round(fnumber[0] / fnumber[1], 1)
+                    else:
+                        result['FNumber'] = fnumber
+                
+                # FocalLength
+                if 'FocalLength' in exif_data:
+                    focal = exif_data['FocalLength']
+                    if isinstance(focal, tuple) and len(focal) == 2:
+                        result['FocalLength'] = round(focal[0] / focal[1], 1)
+                    else:
+                        result['FocalLength'] = focal
+                    
+                # SubjectDistance
+                if 'SubjectDistance' in exif_data:
+                    distance = exif_data['SubjectDistance']
+                    if isinstance(distance, tuple) and len(distance) == 2:
+                        result['SubjectDistance'] = round(distance[0] / distance[1], 1)
+                    else:
+                        result['SubjectDistance'] = distance
+                
+                # DateTime
+                if 'DateTimeOriginal' in exif_data:
+                    result['DateTime'] = exif_data['DateTimeOriginal']
+                elif 'DateTime' in exif_data:
+                    result['DateTime'] = exif_data['DateTime']
+                
+                # If no GPS info, return what we have so far - camera parameters are valuable even without GPS
+                if 'GPSInfo' not in exif_data:
+                    return result
+                
+                # Process GPS data
                 gps_info = {
                     GPSTAGS.get(tag, tag): value
                     for tag, value in exif_data['GPSInfo'].items()
@@ -273,31 +284,34 @@ class Metrics:
                     lat = self._convert_to_degrees(gps_info['GPSLatitude'])
                     if gps_info['GPSLatitudeRef'] == 'S':
                         lat = -lat
-                else:
-                    return None
+                    result['latitude'] = lat
                 
                 # Extract longitude
                 if 'GPSLongitude' in gps_info and 'GPSLongitudeRef' in gps_info:
                     lon = self._convert_to_degrees(gps_info['GPSLongitude'])
                     if gps_info['GPSLongitudeRef'] == 'W':
                         lon = -lon
-                else:
-                    return None
+                    result['longitude'] = lon
                 
                 # Extract altitude
-                altitude = 0.0  # Default if not found
                 if 'GPSAltitude' in gps_info:
-                    altitude = float(gps_info['GPSAltitude'])
-                    if 'GPSAltitudeRef' in gps_info and gps_info['GPSAltitudeRef'] == 1:
-                        altitude = -altitude
+                    try:
+                        if isinstance(gps_info['GPSAltitude'], tuple) and len(gps_info['GPSAltitude']) == 2:
+                            altitude = float(gps_info['GPSAltitude'][0]) / float(gps_info['GPSAltitude'][1])
+                        else:
+                            altitude = float(gps_info['GPSAltitude'])
+                            
+                        if 'GPSAltitudeRef' in gps_info and gps_info['GPSAltitudeRef'] == 1:
+                            altitude = -altitude
+                        
+                        result['altitude'] = altitude
+                    except (ValueError, TypeError, ZeroDivisionError):
+                        print(f"Warning: Could not parse altitude value in {image_path}")
                 
-                return {
-                    'latitude': lat,
-                    'longitude': lon,
-                    'altitude': altitude
-                }
+                return result
+                
         except Exception as e:
-            print(f"Error extracting GPS from {image_path}: {e}")
+            print(f"Error extracting data from {image_path}: {e}")
             return None
 
     def _convert_to_degrees(self, value):
