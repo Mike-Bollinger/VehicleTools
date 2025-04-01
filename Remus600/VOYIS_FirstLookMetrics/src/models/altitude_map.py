@@ -17,7 +17,7 @@ except ImportError:
 class AltitudeMap:
     def __init__(self):
         """Initialize the altitude map generator"""
-        self.altitude_threshold = 9.0  # Default threshold in meters
+        self.altitude_threshold = 8.0  # Default threshold in meters
         self.low_altitude_threshold = 4.0  # Default low threshold in meters
     
     def set_altitude_thresholds(self, high_threshold: float, low_threshold: float = None) -> None:
@@ -71,7 +71,7 @@ class AltitudeMap:
             lons = [p['longitude'] for p in valid_points]
             alts = [p['altitude'] for p in valid_points]
             
-            # Use class variable instead of local variable
+            # Use class variable for low altitude threshold
             low_altitude_threshold = self.low_altitude_threshold
             
             # Separate points into three altitude categories
@@ -127,9 +127,6 @@ class AltitudeMap:
             ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, 
                   verticalalignment='bottom', horizontalalignment='left',
                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-            
-            # Add North arrow
-            self._add_north_arrow(ax)
             
             # Add scale bar if metrics object with scale info is available
             if metrics and hasattr(metrics, 'scale_info') and metrics.scale_info:
@@ -300,7 +297,8 @@ class AltitudeMap:
             ax_top.grid(True, linestyle='--', alpha=0.7)
             ax_bottom.grid(True, linestyle='--', alpha=0.7)
             
-            plt.tight_layout()
+            # Adjust spacing manually
+            fig.subplots_adjust(left=0.12, right=0.95, top=0.95, bottom=0.08, hspace=0.05)
             
             # Save plot
             output_file = os.path.join(output_path, filename)
@@ -368,11 +366,32 @@ class AltitudeMap:
                 print("No valid GPS points found for export")
                 return {}
             
+            # Before creating the GeoDataFrame, fix any problematic data types
+            valid_points_cleaned = []
+            for point in valid_points:
+                # Create a clean copy with properly converted types
+                point_clean = {}
+                for key, value in point.items():
+                    # Convert PIL IFDRational to float for FNumber, FocalLength, etc.
+                    try:
+                        # Check if it's a PIL.TiffImagePlugin.IFDRational or similar
+                        if hasattr(value, 'numerator') and hasattr(value, 'denominator'):
+                            value = float(value.numerator) / float(value.denominator)
+                        # Convert other complex objects to string
+                        elif not isinstance(value, (str, int, float, bool, type(None))):
+                            value = str(value)
+                    except:
+                        value = str(value)
+                        
+                    point_clean[key] = value
+                    
+                valid_points_cleaned.append(point_clean)
+            
             # Use class variable instead of local variable
             low_altitude_threshold = self.low_altitude_threshold
             
             # Create a pandas DataFrame from the GPS data
-            df = pd.DataFrame(valid_points)
+            df = pd.DataFrame(valid_points_cleaned)
             
             # Add missing columns if they don't exist
             for column in ["DateTime", "ExposureTime", "FNumber", "FocalLength", 
@@ -401,10 +420,10 @@ class AltitudeMap:
             if GEOPANDAS_AVAILABLE:
                 try:
                     # Create geometry column (Point objects) from latitude and longitude
-                    geometry = [Point(x, y) for x, y in zip(df['longitude'], df['latitude'])]
+                    points = [Point(point['longitude'], point['latitude']) for point in valid_points_cleaned]
                     
                     # Create GeoDataFrame
-                    gdf = gpd.GeoDataFrame(df, geometry=geometry)
+                    gdf = gpd.GeoDataFrame(valid_points_cleaned, geometry=points)
                     
                     # Set coordinate reference system (CRS) to WGS84
                     gdf.crs = "EPSG:4326"  # WGS84 - standard GPS coordinate system
@@ -498,3 +517,62 @@ class AltitudeMap:
         except Exception as e:
             print(f"Error extracting EXIF data from {image_path}: {e}")
             return {}
+
+
+    def _add_scale_bar(self, ax, scale_info=None):
+        """
+        Add a scale bar to the map
+        
+        Args:
+            ax: Matplotlib axis to add the scale bar to
+            scale_info: Optional dictionary with scale information
+        """
+        if not scale_info:
+            return
+            
+        # Get scale factor (meters per degree)
+        meters_per_degree = scale_info.get('meters_per_degree', 111000)
+        
+        # Get axis limits
+        x_min, x_max = ax.get_xlim()
+        y_min, y_max = ax.get_ylim()
+        
+        # Calculate scale bar length in degrees
+        # Aim for a scale bar around 1/5 of the map width
+        map_width_degrees = x_max - x_min
+        map_width_meters = map_width_degrees * meters_per_degree
+        
+        # Choose a nice round number for scale bar in meters
+        scale_bar_meters = 100  # Default 100m scale
+        
+        if map_width_meters > 10000:  # > 10km
+            scale_bar_meters = 1000  # 1km
+        elif map_width_meters > 1000:  # > 1km
+            scale_bar_meters = 200   # 200m
+        
+        # Convert back to degrees
+        scale_bar_degrees = scale_bar_meters / meters_per_degree
+        
+        # Scale bar position (lower right)
+        bar_x = x_max - scale_bar_degrees * 1.5  # Offset from right edge
+        bar_y = y_min + (y_max - y_min) * 0.05   # Offset from bottom edge
+        
+        # Draw scale bar line
+        ax.plot([bar_x, bar_x + scale_bar_degrees], [bar_y, bar_y], 'k-', 
+               linewidth=2)
+        
+        # Add tick marks at each end
+        tick_height = (y_max - y_min) * 0.01
+        ax.plot([bar_x, bar_x], [bar_y, bar_y + tick_height], 'k-', 
+               linewidth=2)
+        ax.plot([bar_x + scale_bar_degrees, bar_x + scale_bar_degrees], 
+               [bar_y, bar_y + tick_height], 'k-', linewidth=2)
+        
+        # Add label
+        if scale_bar_meters >= 1000:
+            label = f"{scale_bar_meters/1000:.0f} km"
+        else:
+            label = f"{scale_bar_meters:.0f} m"
+            
+        ax.text(bar_x + scale_bar_degrees/2, bar_y + tick_height*2, 
+               label, ha='center', va='bottom')

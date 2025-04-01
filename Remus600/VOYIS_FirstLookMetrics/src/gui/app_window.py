@@ -15,8 +15,15 @@ class AppWindow:
         self.root = root
         self.master = root  # For compatibility with some tkinter code
         
-        # Set default altitude threshold
-        self.altitude_threshold = 9.0
+        # Initialize AltitudeMap
+        self.altitude_map = AltitudeMap()
+        
+        # Make sure metrics object exists
+        self.metrics = None  # Will be initialized later
+        
+        # Set default thresholds
+        self.altitude_threshold = 8.0
+        self.low_altitude_threshold = 4.0
         
         # Initialize variables
         self.all_var = tk.BooleanVar(value=True)
@@ -25,7 +32,7 @@ class AppWindow:
         self.histogram_var = tk.BooleanVar(value=True)
         self.footprint_map_var = tk.BooleanVar(value=True)
         self.nav_path = tk.StringVar()
-        self.threshold_var = tk.StringVar(value="9.0")  # String for text entry
+        self.threshold_var = tk.StringVar(value="8.0")  # String for text entry
         
         # Set all functions to True if all individual options are True
         if all([self.basic_metrics_var.get(), self.location_map_var.get(),
@@ -39,8 +46,7 @@ class AppWindow:
         
         # Create metrics, altitude map and footprint map objects with the threshold
         self.metrics = Metrics(self.altitude_threshold)
-        self.altitude_map = AltitudeMap()
-        self.altitude_map.altitude_threshold = self.altitude_threshold
+        self.altitude_map.set_altitude_thresholds(self.altitude_threshold, 4.0)  # Set both thresholds
         self.footprint_map = FootprintMap()
         self.footprint_map.altitude_threshold = self.altitude_threshold
         
@@ -139,6 +145,9 @@ class AppWindow:
         # Disable the process button during processing
         self.process_button.configure(state=tk.DISABLED)
         
+        # Set both thresholds in the AltitudeMap object
+        self.altitude_map.set_altitude_thresholds(self.altitude_threshold, self.low_altitude_threshold)
+        
         # Start a thread for processing
         thread = threading.Thread(
             target=self.analyze_images,
@@ -158,8 +167,7 @@ class AppWindow:
                 
                 # Update threshold in all components
                 self.metrics.altitude_threshold = altitude_threshold
-                self.altitude_map.altitude_threshold = altitude_threshold
-                self.footprint_map.altitude_threshold = altitude_threshold
+                self.altitude_map.set_altitude_thresholds(altitude_threshold, 4.0)  # Keep low threshold at 4m
                 
                 self.log_message(f"Using altitude threshold: {altitude_threshold:.1f}m")
             except ValueError:
@@ -194,6 +202,25 @@ class AppWindow:
                 self.log_message("Basic metrics processing completed (not displayed as not selected)")
             
             # Step 2: Create location map if selected
+            # Before creating the location map, delete any existing one
+            location_map_path = os.path.join(output_folder, "image_locations_map.png")
+            if os.path.exists(location_map_path):
+                try:
+                    os.remove(location_map_path)
+                except:
+                    pass
+            
+            # Then create the new map
+            if self.location_map_var.get():
+                self.log_message("Creating image location map...")
+                location_map = self.altitude_map.create_location_map(
+                    self.metrics.gps_data, 
+                    output_folder,
+                    metrics=self.metrics
+                )
+                if location_map:
+                    self.log_message(f"Image location map saved to {location_map}")
+            
             if self.location_map_var.get():
                 self.log_message("Creating image location map and GIS exports...")
                 
@@ -521,8 +548,8 @@ class AppWindow:
             self.altitude_threshold = new_threshold
             
             # Update both map objects with the new threshold
-            if hasattr(self.altitude_map, 'altitude_threshold'):
-                self.altitude_map.altitude_threshold = new_threshold
+            if hasattr(self.altitude_map, 'set_altitude_thresholds'):
+                self.altitude_map.set_altitude_thresholds(new_threshold, 4.0)  # Keep low threshold at 4m
                 
             if hasattr(self.footprint_map, 'altitude_threshold'):
                 self.footprint_map.altitude_threshold = new_threshold
@@ -816,8 +843,7 @@ class AppWindow:
             
             # Update all components
             self.metrics.altitude_threshold = new_threshold
-            self.altitude_map.altitude_threshold = new_threshold
-            self.footprint_map.altitude_threshold = new_threshold
+            self.altitude_map.set_altitude_thresholds(new_threshold, 4.0)  # Keep low threshold at 4m
             
             # Log the change
             self.log_message(f"Altitude threshold set to {new_threshold:.1f}m")
