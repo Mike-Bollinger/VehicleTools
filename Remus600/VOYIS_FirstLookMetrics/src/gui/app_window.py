@@ -4,11 +4,14 @@ import os
 import threading
 import builtins
 from tkinter import scrolledtext
+from typing import Optional
 from models.metrics import Metrics
 from models.altitude_map import GEOPANDAS_AVAILABLE, AltitudeMap
 from src.models.footprint_map import FootprintMap
 from src.models.visibility_analyzer import VisibilityAnalyzer
 from datetime import datetime
+import numpy as np
+import time
 
 class AppWindow:
     def __init__(self, root):
@@ -103,6 +106,34 @@ class AppWindow:
             self.nav_path.set(file_path)
             self.log_message(f"Vehicle navigation file set to: {file_path}")
 
+    def select_visibility_file(self, file_type):
+        """Select model file or training data directory for visibility analyzer"""
+        if file_type == "model":
+            # Get the default models directory
+            default_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                                       "v_a_pre-trained_models")
+            os.makedirs(default_dir, exist_ok=True)
+            
+            file_path = filedialog.askopenfilename(
+                title="Select Pre-trained Visibility Model",
+                initialdir=default_dir,
+                filetypes=[("Model files", "*.h5"), ("All files", "*.*")]
+            )
+            if file_path:
+                self.model_path.set(file_path)
+                self.training_path.set("")  # Clear the other path
+                self.model_type_var.set("model")
+                self.log_message(f"Visibility model file set to: {file_path}")
+        else:  # training data
+            folder_path = filedialog.askdirectory(
+                title="Select Visibility Training Data Directory"
+            )
+            if folder_path:
+                self.training_path.set(folder_path)
+                self.model_path.set("")  # Clear the other path
+                self.model_type_var.set("training")
+                self.log_message(f"Visibility training data directory set to: {folder_path}")
+
     def update_nav_file_visibility(self):
         """Show or hide navigation file selection based on footprint map checkbox"""
         if self.footprint_map_var.get():
@@ -110,18 +141,35 @@ class AppWindow:
         else:
             self.nav_file_frame.grid_remove()
 
-    def log_message(self, message):
-        """Add a message to the log window"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        formatted_message = f"[{timestamp}] {message}\n"
+    def toggle_nav_options(self):
+        """Show or hide nav file options based on checkbox state"""
+        if self.footprint_map_var.get():
+            self.nav_file_frame.grid()
+            # Don't affect the visibility options by resizing
+        else:
+            self.nav_file_frame.grid_remove()
         
+        self.update_all_checkbox()
+
+    def log_message(self, message):
+        """
+        Add a message to the log text
+        
+        Args:
+            message: Message to log
+        """
+        # Format with timestamp
+        timestamp = time.strftime("[%H:%M:%S]")
+        log_entry = f"{timestamp} {message}"
+        
+        # Add to text widget
         self.log_text.config(state=tk.NORMAL)
-        self.log_text.insert(tk.END, formatted_message)
+        self.log_text.insert(tk.END, log_entry + "\n")
         self.log_text.see(tk.END)  # Scroll to the end
         self.log_text.config(state=tk.DISABLED)
         
-        # Update the UI
-        self.root.update_idletasks()
+        # Also print to console
+        print(log_entry)
 
     def update_progress(self, value, message="Processing..."):
         """Update the progress bar and message"""
@@ -157,6 +205,7 @@ class AppWindow:
         thread.start()
 
     def analyze_images(self, input_folder, output_folder):
+        """Process images based on selected functions"""
         try:
             self.update_progress(0, "Starting processing...")
             
@@ -174,126 +223,115 @@ class AppWindow:
                 self.log_message(f"Using default altitude threshold: {self.altitude_threshold:.1f}m")
             
             # Determine if we need to extract GPS data
-            extract_gps = self.location_map_var.get() or self.histogram_var.get() or self.footprint_map_var.get()
+            extract_gps = self.location_map_var.get() or self.histogram_var.get() or self.footprint_map_var.get() or self.visibility_analyzer_var.get()
             
-            # Step 1: Always run the basic metrics analysis first
-            self.log_message("Processing basic metrics...")
+            # STAGE 1: Basic Metrics (Always run this first to extract GPS data)
+            self.log_message("STAGE 1: Processing basic metrics...")
             
-            # Calculate metrics with progress updates
-            _, results = self.metrics.analyze_directory(
-                input_folder, 
-                progress_callback=self.update_progress,
-                extract_gps=extract_gps  # Extract GPS data if needed for later
-            )
-            
-            # If basic metrics was selected, show the results
-            if self.basic_metrics_var.get():
-                # Log results to the GUI
-                for line in results:
-                    self.log_message(line)
-                
-                # Write results to output file
-                output_file = os.path.join(output_folder, "image_metrics.txt")
-                with open(output_file, "w") as f:
-                    f.write("\n".join(results))
-                
-                self.log_message(f"Basic metrics saved to: {output_file}")
-            else:
-                self.log_message("Basic metrics processing completed (not displayed as not selected)")
-            
-            # Step 2: Create location map if selected
-            # Before creating the location map, delete any existing one
-            location_map_path = os.path.join(output_folder, "image_locations_map.png")
-            if os.path.exists(location_map_path):
-                try:
-                    os.remove(location_map_path)
-                except:
-                    pass
-            
-            # Then create the new map
-            if self.location_map_var.get():
-                self.log_message("Creating image location map...")
-                location_map = self.altitude_map.create_location_map(
-                    self.metrics.gps_data, 
-                    output_folder,
-                    metrics=self.metrics
+            try:
+                # Calculate metrics with progress updates
+                _, results = self.metrics.analyze_directory(
+                    input_folder, 
+                    progress_callback=self.update_progress,
+                    extract_gps=extract_gps  # Extract GPS data if needed for later
                 )
-                if location_map:
-                    self.log_message(f"Image location map saved to {location_map}")
-            
-            if self.location_map_var.get():
-                self.log_message("Creating image location map and GIS exports...")
                 
-                if not self.metrics.gps_data:
-                    self.log_message("Warning: No GPS data found in images. Cannot create location map or GIS exports.")
+                # If basic metrics was selected, show the results
+                if self.basic_metrics_var.get():
+                    # Log results to the GUI
+                    for line in results:
+                        self.log_message(line)
+                    
+                    # Write results to output file
+                    output_file = os.path.join(output_folder, "image_metrics.txt")
+                    with open(output_file, "w") as f:
+                        f.write("\n".join(results))
+                    
+                    self.log_message(f"Basic metrics saved to: {output_file}")
                 else:
-                    try:
-                        # 1. First create the location map
-                        self.log_message(f"Generating map with {len(self.metrics.gps_data)} GPS points...")
-                        
-                        map_file = self.altitude_map.create_location_map(
-                            self.metrics.gps_data,
-                            output_folder,
-                            metrics=self.metrics
-                        )
-                        
-                        if map_file:
-                            self.log_message(f"Location map saved to: {map_file}")
-                        else:
-                            self.log_message("Error: Could not create location map. No valid GPS coordinates found.")
-                            
-                        # 2. Then create GIS exports (CSV and Shapefile)
-                        self.log_message("Creating GIS exports (CSV & Shapefile)...")
+                    self.log_message("Basic metrics processing completed (not displayed as not selected)")
+            except Exception as e:
+                self.log_message(f"Error processing basic metrics: {str(e)}")
+                raise  # Re-raise to be caught by outer try-except
+            
+            # STAGE 2: Location Map and Altitude Histogram
+            if self.location_map_var.get() or self.histogram_var.get():
+                self.log_message("\nSTAGE 2: Creating location map and altitude histogram...")
+
+                # Check if we have GPS data
+                if not self.metrics.gps_data:
+                    self.log_message("Warning: No GPS data found in images. Cannot create location map or altitude histogram.")
+                else:
+                    # Step 2A: Create location map if selected
+                    if self.location_map_var.get():
+                        self.log_message("Creating image location map...")
                         
                         try:
-                            self.log_message(f"Exporting {len(self.metrics.gps_data)} GPS points to GIS formats...")
+                            # Generate the location map
+                            self.log_message(f"Generating map with {len(self.metrics.gps_data)} GPS points...")
                             
-                            gis_files = self.altitude_map.export_to_gis_formats(
+                            map_file = self.altitude_map.create_location_map(
+                                self.metrics.gps_data,
+                                output_folder,
+                                metrics=self.metrics
+                            )
+                            
+                            if map_file:
+                                self.log_message(f"Location map saved to: {map_file}")
+                            else:
+                                self.log_message("Error: Could not create location map. No valid GPS coordinates found.")
+                                
+                            # Create CSV export (use existing method if available)
+                            self.log_message("Creating GPS data CSV export...")
+                            
+                            try:
+                                # Use the appropriate method based on what's available
+                                if hasattr(self.altitude_map, 'create_gps_csv'):
+                                    csv_file = self.altitude_map.create_gps_csv(
+                                        self.metrics.gps_data,
+                                        output_folder
+                                    )
+                                    if csv_file:
+                                        self.log_message(f"CSV export saved to: {csv_file}")
+                                    
+                                # Otherwise save using metrics directly
+                                else:
+                                    csv_path = os.path.join(output_folder, "image_locations.csv")
+                                    try:
+                                        import pandas as pd
+                                        df = pd.DataFrame(self.metrics.gps_data)
+                                        df.to_csv(csv_path, index=False)
+                                        self.log_message(f"CSV export saved to: {csv_path}")
+                                    except Exception as csv_err:
+                                        self.log_message(f"Error creating CSV export: {str(csv_err)}")
+                                
+                            except Exception as e:
+                                self.log_message(f"Error creating CSV export: {str(e)}")
+                        except Exception as e:
+                            self.log_message(f"Error creating location map: {str(e)}")
+                    
+                    # Step 2B: Create altitude histogram if selected
+                    if self.histogram_var.get():
+                        self.log_message("Creating altitude histogram...")
+                        
+                        try:
+                            self.log_message(f"Generating histogram with {len(self.metrics.gps_data)} altitude points...")
+                            
+                            histogram_file = self.altitude_map.create_altitude_histogram(
                                 self.metrics.gps_data,
                                 output_folder
                             )
                             
-                            if 'csv' in gis_files:
-                                self.log_message(f"CSV file created: {os.path.basename(gis_files['csv'])}")
-                            
-                            if 'shapefile' in gis_files:
-                                self.log_message(f"Shapefile created: {os.path.basename(gis_files['shapefile'])}")
-                                self.log_message("The shapefile can be opened in GIS software such as ArcGIS or QGIS.")
-                            elif GEOPANDAS_AVAILABLE:
-                                self.log_message("Error: Could not create shapefile.")
+                            if histogram_file:
+                                self.log_message(f"Altitude histogram saved to: {histogram_file}")
                             else:
-                                self.log_message("Note: Shapefile creation requires geopandas. Install using: pip install geopandas shapely")
+                                self.log_message("Error: Could not create altitude histogram. No valid altitude data found.")
                         except Exception as e:
-                            self.log_message(f"Error creating GIS exports: {str(e)}")
-                            
-                    except Exception as e:
-                        self.log_message(f"Error creating location map: {str(e)}")
+                            self.log_message(f"Error creating altitude histogram: {str(e)}")
             
-            # Step 3: Create altitude histogram if selected
-            if self.histogram_var.get():
-                self.log_message("Creating altitude histogram...")
-                
-                if not self.metrics.gps_data:
-                    self.log_message("Warning: No GPS data found in images. Cannot create altitude histogram.")
-                else:
-                    try:
-                        self.log_message(f"Generating histogram with {len(self.metrics.gps_data)} altitude points...")
-                        
-                        histogram_file = self.altitude_map.create_altitude_histogram(
-                            self.metrics.gps_data,
-                            output_folder
-                        )
-                        
-                        if histogram_file:
-                            self.log_message(f"Altitude histogram saved to: {histogram_file}")
-                        else:
-                            self.log_message("Error: Could not create altitude histogram. No valid altitude data found.")
-                    except Exception as e:
-                        self.log_message(f"Error creating altitude histogram: {str(e)}")
-            
-            # Step 4: Create footprint map if selected
+            # STAGE 3: Footprint and Overlap Analysis
             if self.footprint_map_var.get():
-                self.log_message("Creating image footprint map...")
+                self.log_message("\nSTAGE 3: Creating image footprint map and overlap analysis...")
                 
                 if not self.metrics.gps_data:
                     self.log_message("Warning: No GPS data found in images. Cannot create footprint map.")
@@ -305,144 +343,169 @@ class AppWindow:
                             self.log_message("Warning: No navigation file selected or file not found. Using default heading.")
                         else:
                             self.log_message(f"Using navigation data from: {nav_file}")
-                        
+                    
                         self.log_message(f"Generating footprint map with {len(self.metrics.gps_data)} images (altitude threshold: {self.altitude_threshold:.1f}m)...")
                         
-                        # Redirect print statements to also go to the log
-                        # Store the original print function
-                        original_print = print
+                        # SAFE way to capture print output without recursion error:
+                        # Use StringIO instead of redefining print
+                        import io
+                        import contextlib
                         
-                        # Define a new print function that logs to our GUI
-                        def logging_print(*args, **kwargs):
-                            # Call the original print function
-                            original_print(*args, **kwargs)
-                            # Also log to our GUI
-                            message = " ".join(str(arg) for arg in args)
-                            self.log_message(message)
-                        
-                        # Replace the built-in print function temporarily
-                        builtins.print = logging_print
-                        
-                        try:
+                        # Create a StringIO object to capture print output
+                        f = io.StringIO()
+                        with contextlib.redirect_stdout(f):
                             # Generate the footprint map
                             map_file = self.footprint_map.create_footprint_map(
                                 self.metrics.gps_data,
                                 output_folder,
                                 nav_file_path=nav_file
                             )
+                        
+                        # Log the captured output (split by lines)
+                        for line in f.getvalue().splitlines():
+                            if line.strip():  # Only log non-empty lines
+                                self.log_message(line)
+                        
+                        # Transfer overlap stats
+                        if hasattr(self.footprint_map, 'vertical_overlap_stats'):
+                            self.metrics.vertical_overlap_stats = self.footprint_map.vertical_overlap_stats
                             
-                            # Transfer overlap stats
-                            if hasattr(self.footprint_map, 'vertical_overlap_stats'):
-                                self.metrics.vertical_overlap_stats = self.footprint_map.vertical_overlap_stats
-                                
-                            if hasattr(self.footprint_map, 'horizontal_overlap_stats'):
-                                self.metrics.horizontal_overlap_stats = self.footprint_map.horizontal_overlap_stats
-                                
-                            if hasattr(self.footprint_map, 'overall_overlap_stats'):
-                                self.metrics.overall_overlap_stats = self.footprint_map.overall_overlap_stats
+                        if hasattr(self.footprint_map, 'horizontal_overlap_stats'):
+                            self.metrics.horizontal_overlap_stats = self.footprint_map.horizontal_overlap_stats
                             
-                            # Append updated metrics with overlap information to the metrics file
-                            self.append_overlap_metrics_to_file(output_folder)
-                            
-                            # Log results
-                            if map_file:
-                                self.log_message(f"Footprint map saved to: {map_file}")
-                                self.log_message("CSV and shapefile with footprint data also created in the same folder.")
-                            else:
-                                self.log_message("Error: Could not create footprint map.")
-                                
-                        finally:
-                            # Restore the original print function
-                            builtins.print = original_print
+                        if hasattr(self.footprint_map, 'overall_overlap_stats'):
+                            self.metrics.overall_overlap_stats = self.footprint_map.overall_overlap_stats
+                        
+                        # Append updated metrics with overlap information to the metrics file
+                        self.append_overlap_metrics_to_file(output_folder)
+                        
+                        # Log results
+                        if map_file:
+                            self.log_message(f"Footprint map saved to: {map_file}")
+                            self.log_message("CSV and shapefile with footprint data also created in the same folder.")
+                        else:
+                            self.log_message("Error: Could not create footprint map.")
                             
                     except Exception as e:
                         self.log_message(f"Error creating footprint map: {str(e)}")
                         import traceback
                         self.log_message(traceback.format_exc())
             
-            # Step 5: Run visibility analysis if selected
+            # STAGE 4: Visibility Analysis (last step)
             if self.visibility_analyzer_var.get():
-                self.log_message("Starting image visibility analysis...")
+                self.log_message("\nSTAGE 4: Running visibility analysis...")
                 
-                if not self.visibility_analyzer.tf_available:
+                # Initialize visibility analyzer if needed
+                if not hasattr(self, 'visibility_analyzer'):
+                    from src.models.visibility_analyzer import VisibilityAnalyzer
+                    self.visibility_analyzer = VisibilityAnalyzer(self.altitude_threshold)
+                else:
+                    # Update the altitude threshold in case it was changed
+                    self.visibility_analyzer.altitude_threshold = self.altitude_threshold
+                
+                # Try to check TensorFlow without importing
+                tf_available = self.visibility_analyzer._import_tensorflow()
+                            
+                if not tf_available:
                     self.log_message("WARNING: TensorFlow not available. Cannot perform visibility analysis.")
                     self.log_message("Please install TensorFlow with: pip install tensorflow")
                 else:
                     try:
-                        # First, check if we have images to analyze
-                        if not self.metrics.gps_data:
-                            self.log_message("Error: No image data available for visibility analysis.")
+                        # Get the path based on radio button selection
+                        if self.model_type_var.get() == "model":
+                            model_path = self.model_path.get()
+                            if not model_path or not os.path.exists(model_path):
+                                self.log_message("Error: Please select a valid visibility model file.")
+                                return
+                        else:  # training
+                            model_path = self.training_path.get()
+                            if not model_path or not os.path.exists(model_path):
+                                self.log_message("Error: Please select a valid training data directory.")
+                                return
+                        
+                        # Load or train model
+                        self.log_message(f"Loading or training visibility model from: {model_path}")
+                        success = self.visibility_analyzer.load_or_train_model(
+                            model_path, 
+                            progress_callback=self.update_progress
+                        )
+                        
+                        if not success:
+                            self.log_message("Error: Could not load or train visibility model.")
                         else:
-                            # Ask user to select a model or training data
-                            model_path = filedialog.askopenfilename(
-                                title="Select Visibility Model or Training Data",
-                                filetypes=[("Model files", "*.h5"), ("All files", "*.*")]
+                            # If we trained a new model, save it
+                            if os.path.isdir(model_path):  # model_path is a training data directory
+                                # Create a models directory in the application root
+                                app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+                                models_dir = os.path.join(app_root, "utils", "models")
+                                os.makedirs(models_dir, exist_ok=True)
+                                
+                                # Create a timestamped filename for the model
+                                import datetime
+                                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                                model_filename = f"visibility_model_{timestamp}.h5"
+                                model_save_path = os.path.join(models_dir, model_filename)
+                                
+                                # Save the model
+                                saved_path = self.visibility_analyzer.save_model(model_save_path)
+                                if saved_path:
+                                    self.log_message(f"Trained model saved to: {saved_path}")
+                                    
+                                    # Also save a copy to the output folder for this specific run
+                                    output_model_path = os.path.join(output_folder, "visibility_model.h5")
+                                    self.visibility_analyzer.save_model(output_model_path)
+                                    self.log_message(f"Model copy saved to output folder: {output_model_path}")
+                                else:
+                                    self.log_message("Warning: Could not save trained model")
+                            
+                            # Patch the log_message method for visibility analyzer
+                            # Store original log_message if exists
+                            if hasattr(self.visibility_analyzer, 'log_message'):
+                                original_log_message = self.visibility_analyzer.log_message
+                            
+                            # Create a properly-scoped log message function
+                            def log_message_adapter(msg, progress=None):
+                                self.log_message(msg)
+                                if progress is not None:
+                                    self.update_progress(progress, msg)
+                            
+                            # Replace the log_message in visibility_analyzer
+                            self.visibility_analyzer.log_message = log_message_adapter
+                            
+                            # The input folder contains the images to analyze
+                            self.log_message(f"Starting visibility analysis with altitude threshold: {self.altitude_threshold}m")
+                            self.log_message("This will process all images below the threshold (up to 5000)")
+                            
+                            # Let the analyzer find all images - don't pre-filter or limit here
+                            success, stats = self.visibility_analyzer.analyze_images(
+                                [],  # Empty list means it will scan the input folder
+                                output_folder,
+                                progress_callback=self.update_progress,
+                                altitude_threshold=self.altitude_threshold
                             )
                             
-                            if not model_path:
-                                # If no file selected, ask for a directory
-                                model_path = filedialog.askdirectory(
-                                    title="Select Training Data Directory"
-                                )
-                                
-                            if not model_path:
-                                self.log_message("Visibility analysis cancelled by user.")
+                            # Restore original log_message if it existed
+                            if hasattr(self.visibility_analyzer, 'original_log_message'):
+                                self.visibility_analyzer.log_message = original_log_message
+                            
+                            if not success:
+                                self.log_message("Error during visibility analysis.")
                             else:
-                                # Load or train model
-                                self.log_message(f"Loading or training visibility model from: {model_path}")
-                                success = self.visibility_analyzer.load_or_train_model(
-                                    model_path, 
-                                    progress_callback=self.update_progress
-                                )
+                                # Show results
+                                self.log_message(f"Visibility analysis complete. Results saved to {output_folder}")
                                 
-                                if not success:
-                                    self.log_message("Error: Could not load or train visibility model.")
-                                else:
-                                    # Save the model if we trained a new one
-                                    if os.path.isdir(model_path):
-                                        model_save_path = os.path.join(output_folder, "visibility_model.h5")
-                                        saved_path = self.visibility_analyzer.save_model(model_save_path)
-                                        if saved_path:
-                                            self.log_message(f"Trained model saved to: {saved_path}")
-                                    
-                                    # Collect image paths
-                                    image_paths = []
-                                    for gps_item in self.metrics.gps_data:
-                                        if 'filename' in gps_item and os.path.exists(os.path.join(input_folder, gps_item['filename'])):
-                                            # Only include images below altitude threshold
-                                            if 'altitude' in gps_item and gps_item['altitude'] <= self.altitude_threshold:
-                                                image_paths.append(os.path.join(input_folder, gps_item['filename']))
-                                    
-                                    if not image_paths:
-                                        self.log_message("Error: No valid images found for visibility analysis.")
-                                    else:
-                                        # Analyze images
-                                        self.log_message(f"Analyzing visibility of {len(image_paths)} images...")
-                                        success, stats = self.visibility_analyzer.analyze_images(
-                                            image_paths,
-                                            output_folder,
-                                            progress_callback=self.update_progress
-                                        )
-                                        
-                                        if not success:
-                                            self.log_message("Error during visibility analysis.")
-                                        else:
-                                            # Show results
-                                            self.log_message(f"Visibility analysis complete. Results saved to {output_folder}")
-                                            
-                                            # Display summary in log
-                                            for line in self.visibility_analyzer.get_summary_report():
-                                                self.log_message(line)
-                                            
-                                            # Append to metrics file
-                                            self.append_visibility_metrics_to_file(output_folder)
-                    
+                                # Display summary in log
+                                for line in self.visibility_analyzer.get_summary_report():
+                                    self.log_message(line)
+                                
+                                # Append to metrics file
+                                self.append_visibility_metrics_to_file(output_folder)
                     except Exception as e:
                         self.log_message(f"Error during visibility analysis: {str(e)}")
                         import traceback
                         self.log_message(traceback.format_exc())
             
-            self.log_message("All selected processing tasks completed successfully.")
+            self.log_message("\nAll selected processing tasks completed successfully.")
             
         except Exception as e:
             self.log_message(f"Error during processing: {str(e)}")
@@ -621,13 +684,17 @@ class AppWindow:
         self.footprint_map_var = tk.BooleanVar(value=True)
         self.visibility_analyzer_var = tk.BooleanVar(value=False)  # Off by default
 
+        # We'll use this to track the row for dynamic positioning
+        self.current_row = 0
+        
         self.all_check = ttk.Checkbutton(
             self.functions_frame,
             text="All Functions",
             variable=self.all_var,
             command=self.toggle_all_functions
         )
-        self.all_check.grid(row=0, column=0, sticky='w', pady=2)
+        self.all_check.grid(row=self.current_row, column=0, sticky='w', pady=2)
+        self.current_row += 1
         
         # Individual functions checkboxes
         self.basic_metrics_check = ttk.Checkbutton(
@@ -636,7 +703,8 @@ class AppWindow:
             variable=self.basic_metrics_var,
             command=self.update_all_checkbox
         )
-        self.basic_metrics_check.grid(row=1, column=0, sticky='w', padx=25, pady=2)
+        self.basic_metrics_check.grid(row=self.current_row, column=0, sticky='w', padx=25, pady=2)
+        self.current_row += 1
         
         self.location_map_check = ttk.Checkbutton(
             self.functions_frame,
@@ -644,7 +712,8 @@ class AppWindow:
             variable=self.location_map_var,
             command=self.update_all_checkbox
         )
-        self.location_map_check.grid(row=2, column=0, sticky='w', padx=25, pady=2)
+        self.location_map_check.grid(row=self.current_row, column=0, sticky='w', padx=25, pady=2)
+        self.current_row += 1
         
         self.histogram_check = ttk.Checkbutton(
             self.functions_frame,
@@ -652,7 +721,8 @@ class AppWindow:
             variable=self.histogram_var,
             command=self.update_all_checkbox
         )
-        self.histogram_check.grid(row=3, column=0, sticky='w', padx=25, pady=2)
+        self.histogram_check.grid(row=self.current_row, column=0, sticky='w', padx=25, pady=2)
+        self.current_row += 1
         
         self.footprint_map_check = ttk.Checkbutton(
             self.functions_frame,
@@ -660,122 +730,185 @@ class AppWindow:
             variable=self.footprint_map_var,
             command=self.update_all_checkbox
         )
-        self.footprint_map_check.grid(row=4, column=0, sticky='w', padx=25, pady=2)
+        self.footprint_map_check.grid(row=self.current_row, column=0, sticky='w', padx=25, pady=2)
+        self.current_row += 1
         
         # Add a frame for nav file selection that appears when footprint map is selected
         self.nav_file_frame = ttk.Frame(self.functions_frame)
-        self.nav_file_frame.grid(row=5, column=0, sticky='w', padx=45, pady=(0, 5))
+        self.nav_file_frame.grid(row=self.current_row, column=0, sticky='w', padx=45, pady=(0, 5))
         self.nav_file_frame.grid_remove()  # Hide it initially
+        self.nav_file_row = self.current_row
+        self.current_row += 1
         
         ttk.Label(self.nav_file_frame, text="Vehicle Navigation File:").grid(row=0, column=0, sticky='w', padx=(0, 5))
         self.nav_entry = ttk.Entry(self.nav_file_frame, textvariable=self.nav_path, width=40)
         self.nav_entry.grid(row=0, column=1, padx=(5, 5), sticky='ew')
         self.nav_button = ttk.Button(self.nav_file_frame, text="Browse...", command=self.select_nav_file)
         self.nav_button.grid(row=0, column=2)
-
-        # Add the method for creating the altitude threshold control
-        self.create_threshold_control()
         
         # Add visibility analyzer checkbox
         self.visibility_analyzer_check = ttk.Checkbutton(
             self.functions_frame,
             text="Analyze Image Visibility",
             variable=self.visibility_analyzer_var,
-            command=self.update_visibility_sections
+            command=self.toggle_visibility_options
         )
-        self.visibility_analyzer_check.grid(row=6, column=0, sticky='w', padx=25, pady=2)
+        self.visibility_analyzer_check.grid(row=self.current_row, column=0, sticky='w', padx=25, pady=2)
+        self.current_row += 1
         
-        # Add frames for visibility analyzer model selection
-        self.visibility_model_frame = ttk.Frame(self.functions_frame)
-        self.visibility_model_frame.grid(row=7, column=0, sticky='w', padx=45, pady=(0, 5))
+        # Add a note about computational intensity below the checkbox
+        self.vis_note_label = ttk.Label(
+            self.functions_frame,
+            text="(Visibility analysis is computationally intensive and may take a long time)",
+            font=("", 8, "italic")
+        )
+        self.vis_note_label.grid(row=self.current_row, column=0, sticky='w', padx=45, pady=(0, 5))
+        self.current_row += 1
+        
+        # Make the visibility frame wider to show all options
+        # Use a LabelFrame for better visual separation and more space
+        self.visibility_model_frame = ttk.LabelFrame(self.functions_frame, text="Visibility Analysis Options")
+        self.visibility_model_frame.grid(row=self.current_row, column=0, sticky='ew', padx=25, pady=(0, 5))
         self.visibility_model_frame.grid_remove()  # Hide it initially
+        self.visibility_model_row = self.current_row
+        self.current_row += 1
+        
+        # Configure column weights to make the frame expand properly
+        self.visibility_model_frame.columnconfigure(1, weight=1)
         
         # Model selection radio buttons
         self.model_type_var = tk.StringVar(value="model")
         
-        ttk.Radiobutton(
+        # Model radio button
+        self.model_radio = ttk.Radiobutton(
             self.visibility_model_frame,
             text="Pre-trained Model",
             variable=self.model_type_var,
-            value="model"
-        ).grid(row=0, column=0, sticky='w', padx=(0, 5))
+            value="model",
+            command=self.on_model_radio_select
+        )
+        self.model_radio.grid(row=0, column=0, sticky='w', padx=(10, 5), pady=(5, 2))
         
-        # Model path
+        # Model path - make entry wider
         self.model_path = tk.StringVar()
-        self.model_entry = ttk.Entry(self.visibility_model_frame, textvariable=self.model_path, width=30)
-        self.model_entry.grid(row=0, column=1, padx=(5, 5), sticky='ew')
+        self.model_entry = ttk.Entry(self.visibility_model_frame, textvariable=self.model_path, width=40)
+        self.model_entry.grid(row=0, column=1, padx=(5, 5), pady=(5, 2), sticky='ew')
         self.model_button = ttk.Button(
             self.visibility_model_frame, 
             text="Browse...", 
             command=lambda: self.select_visibility_file("model")
         )
-        self.model_button.grid(row=0, column=2)
+        self.model_button.grid(row=0, column=2, padx=(0, 10), pady=(5, 2))
         
-        # Training data selection
-        ttk.Radiobutton(
+        # Training data selection - increase padding for better spacing
+        self.training_radio = ttk.Radiobutton(
             self.visibility_model_frame,
             text="Training Data",
             variable=self.model_type_var,
-            value="training"
-        ).grid(row=1, column=0, sticky='w', padx=(0, 5))
+            value="training",
+            command=self.on_training_radio_select
+        )
+        self.training_radio.grid(row=1, column=0, sticky='w', padx=(10, 5), pady=(2, 5))
         
-        # Training path
+        # Training path - make entry wider
         self.training_path = tk.StringVar()
-        self.training_entry = ttk.Entry(self.visibility_model_frame, textvariable=self.training_path, width=30)
-        self.training_entry.grid(row=1, column=1, padx=(5, 5), sticky='ew')
+        self.training_entry = ttk.Entry(self.visibility_model_frame, textvariable=self.training_path, width=40)
+        self.training_entry.grid(row=1, column=1, padx=(5, 5), pady=(2, 5), sticky='ew')
         self.training_button = ttk.Button(
             self.visibility_model_frame, 
             text="Browse...", 
             command=lambda: self.select_visibility_file("training")
         )
-        self.training_button.grid(row=1, column=2)
+        self.training_button.grid(row=1, column=2, padx=(0, 10), pady=(2, 5))
         
-        # Add a note about computational intensity
+        # Add Training Guide button inside the visibility model frame - center it better
+        self.help_button = ttk.Button(
+            self.visibility_model_frame,
+            text="Training Guide",
+            command=self.show_training_guide
+        )
+        self.help_button.grid(row=2, column=0, columnspan=3, pady=(0, 10))
+        
+        # Create the altitude threshold controls
+        self.threshold_var = tk.StringVar(value=str(self.altitude_threshold))
+        
+        # Create a separate frame for the altitude threshold
+        self.threshold_frame = ttk.Frame(self.functions_frame)
+        self.threshold_row = self.current_row  # Store this row number for reference
+        self.threshold_frame.grid(row=self.threshold_row, column=0, sticky='w', pady=5)
+        
+        # Add altitude threshold controls to the threshold frame
+        ttk.Label(self.threshold_frame, text="Altitude Threshold (m):").grid(row=0, column=0, sticky='w', padx=(0, 5))
+        
+        threshold_entry = ttk.Entry(self.threshold_frame, textvariable=self.threshold_var, width=6)
+        threshold_entry.grid(row=0, column=1, padx=5, sticky='w')
+        
+        apply_button = ttk.Button(self.threshold_frame, text="Apply", command=self.update_threshold)
+        apply_button.grid(row=0, column=2, padx=5, sticky='w')
+        
+        self.current_row += 1
+        
+        # Add explanation text for altitude threshold
         ttk.Label(
-            self.functions_frame,
-            text="(Visibility analysis is computationally intensive and may take a long time)",
-            font=("", 8, "italic"),
-        ).grid(row=8, column=0, sticky="w", padx=25, pady=(0, 10))
+            self.functions_frame, 
+            text="(Altitude threshold filters out images that are too high to see the seabed)",
+            font=("", 8, "italic")
+        ).grid(row=self.current_row, column=0, sticky='w', pady=(0, 10), padx=25)
+        self.current_row += 1
         
-        # Add the method for creating the altitude threshold control
-        self.create_threshold_control()
-        
-        # Add process button
+        # Add process button in the action frame
         self.process_button = ttk.Button(
             self.action_frame,
             text="Process Images",
             command=self.process_images
         )
-        self.process_button.grid(row=0, column=0)
+        self.process_button.grid(row=0, column=0, pady=10, padx=10)
 
-    def select_visibility_file(self, file_type):
-        """Select model file or training data directory for visibility analyzer"""
-        if file_type == "model":
-            file_path = filedialog.askopenfilename(
-                title="Select Pre-trained Visibility Model",
-                filetypes=[("Model files", "*.h5"), ("All files", "*.*")]
-            )
-            if file_path:
-                self.model_path.set(file_path)
-                self.training_path.set("")  # Clear the other path
-                self.model_type_var.set("model")
-                self.log_message(f"Visibility model file set to: {file_path}")
-        else:  # training data
-            folder_path = filedialog.askdirectory(
-                title="Select Visibility Training Data Directory"
-            )
-            if folder_path:
-                self.training_path.set(folder_path)
-                self.model_path.set("")  # Clear the other path
-                self.model_type_var.set("training")
-                self.log_message(f"Visibility training data directory set to: {folder_path}")
-
-    def update_visibility_sections(self):
-        """Show or hide visibility file selections based on visibility analyzer checkbox"""
+    def toggle_visibility_options(self):
+        """Show or hide visibility analysis options based on checkbox state"""
         if self.visibility_analyzer_var.get():
+            # Show the model frame
             self.visibility_model_frame.grid()
+            
+            # Move the threshold frame below the visibility options
+            self.threshold_frame.grid_forget()  # Remove from current position
+            self.threshold_frame.grid(row=self.visibility_model_row + 1, column=0, sticky='w', pady=5)
+            
+            # Set default path in the model entry field instead of showing a dialog
+            if not self.model_path.get() and not self.training_path.get():
+                # Get the default models directory
+                default_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                                       "v_a_pre-trained_models")
+                
+                # Look for existing .h5 files in that directory
+                if os.path.exists(default_dir):
+                    model_files = [f for f in os.listdir(default_dir) if f.endswith('.h5')]
+                    if model_files:
+                        # Use the most recent model file based on filename (assuming timestamp in name)
+                        model_files.sort(reverse=True)  # Sort in descending order
+                        default_model = os.path.join(default_dir, model_files[0])
+                        self.model_path.set(default_model)
+                        self.log_message(f"Default visibility model: {default_model}")
+                    else:
+                        # No model files found, just set the directory
+                        self.model_path.set(default_dir)
+                        self.log_message(f"No model files found in default directory. Please select a model.")
+                else:
+                    # Default directory doesn't exist, create it and set the path
+                    os.makedirs(default_dir, exist_ok=True)
+                    self.model_path.set(default_dir)
+                    self.log_message(f"Please select a visibility model file.")
+                
+                # Make sure model radio is selected by default
+                self.model_type_var.set("model")
+                self.on_model_radio_select()
         else:
+            # Hide the model frame
             self.visibility_model_frame.grid_remove()
+            
+            # Move the threshold frame back to its original position
+            self.threshold_frame.grid_forget()  # Remove from current position
+            self.threshold_frame.grid(row=self.threshold_row, column=0, sticky='w', pady=5)
         
         self.update_all_checkbox()
 
@@ -852,3 +985,122 @@ class AppWindow:
             messagebox.showwarning("Invalid Input", "Please enter a valid number for the altitude threshold.")
         except Exception as e:
             self.log_message(f"Error updating threshold: {str(e)}")
+
+    def _load_image(self, image_path: str, target_size=(224, 224)) -> Optional[np.ndarray]:
+        """Load and preprocess an image for the model"""
+        try:
+            # Use TensorFlow's method to load the image
+            img = self._load_img(image_path, target_size=target_size)
+            img_array = self._img_to_array(img)
+            # Apply VGG16 preprocessing (normalize for the model)
+            img_array = self._preprocess_input(img_array)
+            return img_array
+        except Exception as e:
+            print(f"Error loading image {image_path}: {str(e)}")
+            return None
+
+    def show_training_guide(self):
+        """Display a guide for setting up training data"""
+        # Lazy-load the visibility analyzer if needed
+        if not hasattr(self, 'visibility_analyzer'):
+            from src.models.visibility_analyzer import VisibilityAnalyzer
+            self.visibility_analyzer = VisibilityAnalyzer(self.altitude_threshold)
+        
+        # Create a dialog window
+        guide_window = tk.Toplevel(self.master)
+        guide_window.title("Training Data Structure Guide")
+        guide_window.geometry("650x450")
+        
+        # Add text widget for the guide content
+        guide_text = tk.Text(guide_window, wrap=tk.WORD, padx=10, pady=10)
+        guide_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Create scrollbar
+        scrollbar = ttk.Scrollbar(guide_text, command=guide_text.yview)
+        guide_text.config(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Add the guide content
+        guide_content = """
+TRAINING DATA DIRECTORY STRUCTURE GUIDE
+
+Your training data folder should have this structure:
+
+Training_Data/
+  ├── zero_visibility/
+  │   ├── image1.jpg
+  │   ├── image2.jpg
+  │   └── ...
+  ├── low_visibility/
+  │   ├── image1.jpg
+  │   ├── image2.jpg
+  │   └── ...
+  ├── good_visibility/
+  │   ├── image1.jpg
+  │   ├── image2.jpg
+  │   └── ...
+  └── great_visibility/
+      ├── image1.jpg
+      ├── image2.jpg
+      └── ...
+
+IMPORTANT NOTES:
+
+1. Each category subfolder MUST be named exactly as shown above
+2. Each category should contain example images for that visibility level
+3. Supported image formats: .jpg, .jpeg, .png, .tif, .tiff
+4. For best results, include at least 20-30 images per category
+5. Images should be representative of the category (clear examples)
+6. Avoid using the same or very similar images across categories
+
+HOW TO PREPARE YOUR DATA:
+
+1. Create a main training folder (e.g., "Training_Data")
+2. Inside it, create the four subfolders with exact names shown above
+3. Sort your example images into the appropriate folders
+4. Browse to the main folder (not the subfolders) when selecting training data
+
+The visibility categories represent:
+- zero_visibility: No visible features, complete turbidity
+- low_visibility: Minimal features visible, heavy turbidity
+- good_visibility: Clear features, moderate turbidity
+- great_visibility: Very clear features, minimal turbidity
+"""
+        
+        guide_text.insert(tk.END, guide_content)
+        guide_text.config(state=tk.DISABLED)  # Make read-only
+        
+        # Add a close button
+        close_button = ttk.Button(guide_window, text="Close", command=guide_window.destroy)
+        close_button.pack(pady=10)
+        
+        # Make dialog modal
+        guide_window.transient(self.master)
+        guide_window.grab_set()
+        self.master.wait_window(guide_window)
+
+    def on_training_radio_select(self):
+        """Called when training radio button is selected"""
+        path = self.training_path.get()
+        if path and os.path.isdir(path):
+            # Check training directory structure
+            if hasattr(self, 'visibility_analyzer'):
+                message = self.visibility_analyzer.verify_and_provide_training_guidance(path)
+                if "Error" in message or "Warning" in message:
+                    self.log_message(message)
+        
+        # Update UI state
+        self.training_entry.config(state=tk.NORMAL)
+        self.training_button.config(state=tk.NORMAL)
+        self.help_button.config(state=tk.NORMAL)
+        self.model_entry.config(state=tk.DISABLED)
+        self.model_button.config(state=tk.DISABLED)
+
+    def on_model_radio_select(self):
+        """Called when model radio button is selected"""
+        # Update UI state
+        self.model_entry.config(state=tk.NORMAL)
+        self.model_button.config(state=tk.NORMAL)
+        self.training_entry.config(state=tk.DISABLED)
+        self.training_button.config(state=tk.DISABLED)
+        self.help_button.config(state=tk.DISABLED)
