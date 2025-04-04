@@ -1,2 +1,4 @@
 BOEM_Stats.R
 __pycache__/OverwriteFS.cpython-39.pyc
+.gitignore
+Remus600/VOYIS_FirstLookMetrics/v_a_pre-trained_models/visibility_model_20250402.h5
