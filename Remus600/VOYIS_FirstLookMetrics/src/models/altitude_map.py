@@ -149,7 +149,8 @@ class AltitudeMap:
             return None
     
     def create_altitude_histogram(self, gps_data: List[Dict], output_path: str, 
-                               filename: str = "altitude_histogram.png") -> Optional[str]:
+                               filename: str = "altitude_histogram.png",
+                               max_display_altitude: float = 50.0) -> Optional[str]:
         """
         Create a histogram of image altitudes with a broken y-axis
         
@@ -157,6 +158,7 @@ class AltitudeMap:
             gps_data: List of dictionaries with GPS data
             output_path: Directory to save the output files
             filename: Filename for the generated histogram
+            max_display_altitude: Maximum altitude to display individually (m), higher values are binned
             
         Returns:
             Path to the saved plot file, or None if no data or error
@@ -192,6 +194,15 @@ class AltitudeMap:
             max_alt = max(altitudes)
             alt_range = max_alt - min_alt
             
+            # Handle outliers by capping display values at max_display_altitude
+            # For histogram purposes, bin all values above max_display_altitude
+            # Create a modified list for plotting
+            plot_altitudes = [min(alt, max_display_altitude) for alt in altitudes]
+            
+            # Calculate how many values are above max_display_altitude
+            above_max_count = sum(1 for alt in altitudes if alt > max_display_altitude)
+            above_max_pct = (above_max_count / len(altitudes)) * 100
+            
             # Dynamically calculate number of bins based on dataset size
             if len(altitudes) > 10000:
                 n_bins = min(100, len(altitudes) // 50)
@@ -207,11 +218,64 @@ class AltitudeMap:
             
             print(f"Using {n_bins} bins for altitude histogram with {len(altitudes)} data points")
             
-            # Create the histograms
-            counts_top, bins_top, patches_top = ax_top.hist(altitudes, bins=n_bins, color='skyblue', 
+            # Define custom bin edges to focus on the relevant altitude range
+            # Make sure the bins extend from 0 to max_display_altitude
+            bin_edges = np.linspace(0, max_display_altitude, n_bins)
+            
+            # For histograms with clear indication of binned values at the end
+            # Make a copy of the bin edges to add a final bin for >50m data
+            extended_bin_edges = np.append(bin_edges, max_display_altitude * 1.05)  # Add one more bin slightly beyond max
+
+            # Create the histograms with modified altitudes
+            counts_top, bins_top, patches_top = ax_top.hist(plot_altitudes, bins=bin_edges, color='skyblue', 
                                                           edgecolor='black', alpha=0.7)
-            counts_bottom, bins_bottom, patches_bottom = ax_bottom.hist(altitudes, bins=n_bins, color='skyblue', 
+            counts_bottom, bins_bottom, patches_bottom = ax_bottom.hist(plot_altitudes, bins=bin_edges, color='skyblue', 
                                                                       edgecolor='black', alpha=0.7)
+
+            # If there are values above max_display_altitude, add a special bin in red
+            if above_max_count > 0:
+                # Prepare data for the ">50m" bin
+                binned_data = np.array([max_display_altitude] * above_max_count)
+                
+                # Add a red bin at the end for values >50m (in both subplots)
+                # For top subplot
+                last_bin_top = ax_top.hist([max_display_altitude] * above_max_count, 
+                                         bins=[max_display_altitude * 0.96, max_display_altitude * 1.04], 
+                                         color='red', edgecolor='black', alpha=0.7)
+                
+                # For bottom subplot
+                last_bin_bottom = ax_bottom.hist([max_display_altitude] * above_max_count, 
+                                               bins=[max_display_altitude * 0.96, max_display_altitude * 1.04], 
+                                               color='red', edgecolor='black', alpha=0.7)
+                
+                # Add a text annotation for the binned values
+                max_count = max(counts_top)
+                y_pos = max_count * 0.9  # Position near top of the chart
+                
+                # Add text in top subplot
+                ax_top.text(max_display_altitude * 0.9, y_pos,
+                           f"{above_max_count} images > {max_display_altitude}m\n({above_max_pct:.1f}%)",
+                           color='red', fontweight='bold', ha='right', va='top',
+                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                
+                # Special x-axis label for the binned values
+                # Add a special tick and label at the end of the x-axis for values >50m
+                # Get existing ticks
+                ticks = list(ax_bottom.get_xticks())
+                labels = [f"{t:.0f}" for t in ticks if t < max_display_altitude]
+                
+                # Add the special >50m tick
+                ticks.append(max_display_altitude)
+                labels.append(f">{max_display_altitude:.0f}m")
+                
+                # Set the custom ticks and labels
+                ax_bottom.set_xticks(ticks)
+                ax_bottom.set_xticklabels(labels)
+                
+                # Make the >50m label red
+                tick_labels = ax_bottom.get_xticklabels()
+                tick_labels[-1].set_color('red')
+                tick_labels[-1].set_fontweight('bold')
             
             # Calculate where to break the y-axis
             max_count = max(counts_top)
@@ -269,6 +333,16 @@ class AltitudeMap:
             ax_bottom.set_xlabel('Altitude (meters)', fontsize=12)
             ax_top.set_title('Image Altitude Distribution', fontsize=14)
             
+            # Set x-axis limit to include the special bin for values >50m
+            ax_bottom.set_xlim(0, max_display_altitude * 1.05)  # Add a small buffer for the >50m bin
+            
+            # Add subtitle showing full altitude range
+            if max_alt > max_display_altitude:
+                subtitle = f"Display limited to {max_display_altitude}m (full range: {min_alt:.1f}m - {max_alt:.1f}m)"
+                ax_top.text(0.5, 0.95, subtitle, transform=ax_top.transAxes, 
+                         fontsize=10, ha='center', va='top',
+                         bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            
             # Add y-label only to the left side (once between the two plots)
             fig.text(0.04, 0.5, 'Number of Images', va='center', rotation='vertical', fontsize=12)
             
@@ -278,7 +352,7 @@ class AltitudeMap:
             
             # Add statistics annotation to top plot
             stats_text = f'Total Images: {len(altitudes)}\n'
-            stats_text += f'Range: {min_alt:.2f}m - {max_alt:.2f}m\n'
+            stats_text += f'Altitude Range: {min_alt:.2f}m - {max_alt:.2f}m\n'
             stats_text += f'Mean: {np.mean(altitudes):.2f}m\n'
             stats_text += f'Median: {np.median(altitudes):.2f}m\n'
             stats_text += f'Too Low (<{self.low_altitude_threshold}m): {below_low} images ({below_low_pct:.1f}%)\n'

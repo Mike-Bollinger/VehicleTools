@@ -846,6 +846,7 @@ class VisibilityAnalyzer:
                     
                     # Create visualizations
                     self.create_visibility_chart(csv_path, output_folder)
+                    self.create_enhanced_visibility_chart(csv_path, output_folder)
                     
                     # Create map and shapefile if we have location data
                     if has_location_data:
@@ -1001,6 +1002,171 @@ class VisibilityAnalyzer:
             self.log_message(traceback.format_exc())
             return None
     
+    def create_enhanced_visibility_chart(self, csv_path: str, output_folder: str) -> Optional[str]:
+        """
+        Create an enhanced bar chart visualization with example images for each visibility category
+        
+        Args:
+            csv_path: Path to the CSV file with analysis results
+            output_folder: Directory to save the chart
+            
+        Returns:
+            Path to the saved chart, or None if error
+        """
+        try:
+            # Read the CSV file
+            df = self._pd.read_csv(csv_path)
+            
+            # Count occurrences of each visibility category
+            visibility_counts = df['visibility'].value_counts()
+            
+            # Convert to a DataFrame for plotting
+            plot_df = self._pd.DataFrame({
+                'category': visibility_counts.index,
+                'count': visibility_counts.values
+            })
+            
+            # Sort by visibility category in a logical order
+            category_order = ['zero_visibility', 'low_visibility', 'good_visibility', 'great_visibility']
+            plot_df['order'] = plot_df['category'].map(lambda x: 
+                                                     category_order.index(x) if x in category_order else 999)
+            plot_df = plot_df.sort_values('order').drop('order', axis=1)
+            
+            # Create a larger figure to accommodate images
+            fig = self._plt.figure(figsize=(14, 10))
+            
+            # Create gridspec for layout: bar chart on top, images on bottom
+            gs = fig.add_gridspec(2, 1, height_ratios=[3, 2], hspace=0.3)
+            
+            # Top subplot for bar chart
+            ax_bar = fig.add_subplot(gs[0])
+            
+            # Color mapping for different visibility categories
+            colors = {
+                'zero_visibility': 'red',
+                'low_visibility': 'orange',
+                'good_visibility': 'green',
+                'great_visibility': 'blue'
+            }
+            
+            # Create the bar chart
+            self._sns.barplot(
+                data=plot_df,
+                x='category',
+                y='count',
+                hue='category',
+                palette=colors,
+                legend=False,
+                ax=ax_bar
+            )
+            
+            # Add count labels on top of each bar
+            for i, row in enumerate(plot_df.itertuples()):
+                ax_bar.text(i, row.count + 5, str(row.count), ha='center', fontweight='bold')
+            
+            # Add labels and title
+            ax_bar.set_title('Visibility Analysis Results', fontsize=16)
+            ax_bar.set_xlabel('Visibility Category', fontsize=14)
+            ax_bar.set_ylabel('Number of Images', fontsize=14)
+            ax_bar.set_xticklabels(ax_bar.get_xticklabels(), rotation=0)  # Keep labels horizontal
+            
+            # Calculate percentages for each category
+            total = plot_df['count'].sum()
+            
+            # Add percentage annotations
+            for i, row in enumerate(plot_df.itertuples()):
+                percentage = (row.count/total)*100
+                ax_bar.text(i, row.count/2, f'{percentage:.1f}%', 
+                        ha='center', color='white', fontweight='bold')
+            
+            # Bottom subplot for example images
+            ax_img = fig.add_subplot(gs[1])
+            ax_img.axis('off')  # Turn off axis for image display
+            
+            # Find an example image for each category with highest confidence
+            example_images = {}
+            for category in plot_df['category']:
+                # Filter dataset for this category
+                category_df = df[df['visibility'] == category]
+                
+                # Skip if no images in this category
+                if len(category_df) == 0:
+                    continue
+                    
+                # Sort by confidence and get the highest confidence image
+                if 'confidence' in category_df.columns:
+                    category_df = category_df.sort_values('confidence', ascending=False)
+                
+                # Get the full path to the image (we need to reconstruct it)
+                img_filename = category_df.iloc[0]['image']
+                
+                # Look for the image first in the parent directory of the output folder
+                input_folder = os.path.dirname(output_folder)
+                example_paths = []
+                
+                # Search for the image in various locations
+                for root, _, files in os.walk(input_folder):
+                    if img_filename in files:
+                        example_paths.append(os.path.join(root, img_filename))
+                
+                if example_paths:
+                    example_images[category] = example_paths[0]
+                    self.log_message(f"Found example image for {category}: {example_paths[0]}")
+                else:
+                    self.log_message(f"Could not find example image for {category}: {img_filename}")
+            
+            # If we found some example images, display them
+            if example_images:
+                # Number of categories with example images
+                num_categories = len(example_images)
+                
+                # Create grid of axes for images
+                img_axes = []
+                # Use reduced margins (10% on each side instead of default)
+                margin = 0.05
+                usable_width = 1.0 - (2 * margin)
+                col_width = usable_width / num_categories
+                
+                for i, (category, img_path) in enumerate(example_images.items()):
+                    # Create axis for this image - with reduced margins
+                    img_ax = ax_img.inset_axes([margin + (i * col_width), 0.05, col_width, 0.9])
+                    img_axes.append(img_ax)
+                    
+                    try:
+                        # Read and display image
+                        img = self._plt.imread(img_path)
+                        img_ax.imshow(img)
+                        img_ax.set_title(f"{category}", fontsize=12)
+                        img_ax.axis('off')
+                    except Exception as e:
+                        self.log_message(f"Error displaying example image for {category}: {e}")
+                        img_ax.text(0.5, 0.5, f"Error loading image", 
+                                   ha='center', va='center', transform=img_ax.transAxes)
+                        img_ax.axis('off')
+            else:
+                # If we couldn't find any example images, show a message
+                ax_img.text(0.5, 0.5, "Example images not found. Check image paths and permissions.", 
+                          ha='center', va='center', fontsize=14, transform=ax_img.transAxes)
+                
+            # Add overall title
+            #fig.suptitle('Visibility Analysis Results', fontsize=18, y=0.98)
+            
+            # Use tighter margins for the overall figure - reduced left, right, bottom margins
+            fig.tight_layout(rect=[0.02, 0.02, 0.98, 0.96])  # [left, bottom, right, top]
+            
+            # Save enhanced chart
+            chart_path = os.path.join(output_folder, "visibility_analysis_with_examples.png")
+            fig.savefig(chart_path, dpi=300, bbox_inches='tight')  # bbox_inches='tight' reduces margins further
+            self._plt.close(fig)
+            
+            self.log_message(f"Enhanced visibility analysis chart with examples saved to: {chart_path}")
+            return chart_path
+            
+        except Exception as e:
+            self.log_message(f"Error creating enhanced visibility chart: {e}")
+            self.log_message(traceback.format_exc())
+            return None
+
     def verify_training_data(self, training_data_path: str, progress_callback: Optional[Callable] = None) -> bool:
         """
         Verify and fix training data directory structure if needed
