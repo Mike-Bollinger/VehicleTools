@@ -724,6 +724,8 @@ class VisibilityAnalyzer:
                 self.log_message(f"Using all {below_threshold_count} images below threshold (no sampling needed)")
                 self.log_message(f"Using all {below_threshold_count} images below threshold for analysis", progress=50)
             
+            self.log_message("This will also select 20 highlight images representative of the dataset")
+            
             # STEP 5: Analyze the selected images
             self.log_message("\nSTEP 5: Analyzing visibility of selected images")
             self.log_message("-" * 50)
@@ -847,6 +849,7 @@ class VisibilityAnalyzer:
                     # Create visualizations
                     self.create_visibility_chart(csv_path, output_folder)
                     self.create_enhanced_visibility_chart(csv_path, output_folder)
+
                     
                     # Create map and shapefile if we have location data
                     if has_location_data:
@@ -859,6 +862,12 @@ class VisibilityAnalyzer:
                         self.log_message("Creating shapefile...", progress=97)
                         shapefile_path = self.create_shapefile(output_folder)
                         self.log_message(f"✓ Shapefile created: {shapefile_path}")
+                    
+                    # Select highlight images
+                    self.log_message("Selecting highlight images for manual review...")
+                    if progress_callback:
+                        progress_callback(98, "Selecting highlight images...")
+                    self.select_highlight_images(output_folder, count=20)
                 except Exception as e:
                     self.log_message(f"Error saving results to CSV: {e}")
                     self.log_message(traceback.format_exc())
@@ -1501,3 +1510,329 @@ class VisibilityAnalyzer:
                 # If no progress is provided, just update the status message
                 # This assumes the progress_callback can handle None as the progress value
                 progress_callback(None, message)
+
+    def select_highlight_images(self, output_folder: str, count: int = 10) -> List[str]:
+        """
+        Select highlight images representing the dataset with priority for high contrast
+        
+        Args:
+            output_folder: Directory to save highlight images
+            count: Number of highlight images to select (default: 10)
+            
+        Returns:
+            List of paths to selected highlight images
+        """
+        try:
+            # Create highlight images directory
+            highlight_dir = os.path.join(output_folder, "highlight_images")
+            os.makedirs(highlight_dir, exist_ok=True)
+            
+            self.log_message(f"Selecting {count} highlight images...")
+            
+            # If we don't have analyzed images, can't select highlights
+            if not hasattr(self, 'visibility_stats') or not self.visibility_stats.get('analyzed_images'):
+                self.log_message("No analyzed images available. Cannot select highlights.")
+                return []
+            
+            # Create a DataFrame from the analyzed images to simplify selection
+            import pandas as pd
+            results_df = pd.DataFrame(self.visibility_stats['analyzed_images'])
+            
+            # Strategy: Select images from each visibility category proportionally
+            # with preference for higher confidence within each category
+            
+            highlights = []
+            highlight_paths = []
+            
+            # Helper function to calculate contrast score for an image
+            def calculate_contrast(img_path):
+                try:
+                    # Load image with numpy array conversion
+                    img = self._plt.imread(img_path)
+                    
+                    # Convert to grayscale if needed
+                    if len(img.shape) == 3 and img.shape[2] == 3:
+                        # Convert RGB to grayscale
+                        gray = 0.2989 * img[:,:,0] + 0.5870 * img[:,:,1] + 0.1140 * img[:,:,2]
+                    else:
+                        gray = img
+                    
+                    # Calculate contrast as standard deviation of pixel values
+                    # Normalize by maximum possible std dev for the data type
+                    contrast = self._np.std(gray)
+                    
+                    # Normalize based on data type
+                    if img.dtype == self._np.uint8:
+                        max_std = 127.5  # Max possible std for uint8
+                    elif img.dtype == self._np.float32 or img.dtype == self._np.float64:
+                        max_std = 0.5    # Max possible std for float [0,1]
+                    else:
+                        max_std = contrast  # Just use as-is if unknown
+                    
+                    # Return normalized contrast score between 0 and 1
+                    return min(contrast / max_std, 1.0)
+                except Exception as e:
+                    self.log_message(f"Error calculating contrast: {e}")
+                    return 0.0
+            
+            # First, ensure each category has at least one representative (if present in dataset)
+            categories_present = results_df['visibility'].unique()
+            
+            # Sort categories from best to worst visibility
+            category_priority = ['great_visibility', 'good_visibility', 'low_visibility', 'zero_visibility']
+            categories_present = sorted(categories_present, 
+                                       key=lambda x: category_priority.index(x) if x in category_priority else 999)
+            
+            # Ensure we have at least one image from each category (if available)
+            for category in categories_present:
+                # Get images for this category
+                category_df = results_df[results_df['visibility'] == category].sort_values('confidence', ascending=False)
+                
+                if not category_df.empty:
+                    # Consider top 5 highest confidence images to find the one with best contrast
+                    top_images = category_df.head(min(5, len(category_df)))
+                    
+                    # Find the source paths for these images
+                    candidate_paths = []
+                    for _, row in top_images.iterrows():
+                        image_name = row['image']
+                        
+                        # Look for the image in the input folder
+                        input_folder = os.path.dirname(output_folder)
+                        source_path = None
+                        
+                        # Search for the image
+                        for root, _, files in os.walk(input_folder):
+                            if image_name in files:
+                                source_path = os.path.join(root, image_name)
+                                break
+                        
+                        if source_path:
+                            candidate_paths.append((row, source_path))
+                    
+                    # Calculate contrast for each candidate
+                    best_image = None
+                    best_path = None
+                    best_score = -1
+                    
+                    for row, path in candidate_paths:
+                        # Calculate a combined score using both confidence and contrast
+                        contrast = calculate_contrast(path)
+                        confidence = row['confidence']
+                        
+                        # Weight: 60% contrast, 40% confidence
+                        combined_score = (contrast * 0.6) + (confidence * 0.4)
+                        
+                        self.log_message(f"Candidate {row['image']}: conf={confidence:.2f}, contrast={contrast:.2f}, score={combined_score:.2f}")
+                        
+                        if combined_score > best_score:
+                            best_score = combined_score
+                            best_image = row
+                            best_path = path
+                    
+                    if best_image is not None:
+                        highlights.append(best_image)
+                        
+                        # Copy to highlights folder
+                        dest_path = os.path.join(highlight_dir, best_image['image'])
+                        import shutil
+                        shutil.copy2(best_path, dest_path)
+                        highlight_paths.append(dest_path)
+                        
+                        self.log_message(f"Selected highlight for {category}: {best_image['image']} (confidence: {best_image['confidence']:.2f}, contrast score: {best_score:.2f})")
+            
+            # Calculate how many more images we need
+            remaining = count - len(highlights)
+            
+            if remaining > 0:
+                # For remaining slots, use a weighted selection with:
+                # - Preference for better visibility categories
+                # - Preference for higher confidence
+                # - Preference for images with high contrast
+                # - Preference for images not too similar to already selected ones
+                
+                # Find and calculate contrast for top candidates
+                # Start with good and great visibility images
+                good_vis_categories = [cat for cat in category_priority if cat in ['good_visibility', 'great_visibility']]
+                potential_df = results_df[results_df['visibility'].isin(good_vis_categories)]
+                
+                # Remove already selected images
+                selected_images = [h['image'] for h in highlights]
+                potential_df = potential_df[~potential_df['image'].isin(selected_images)]
+                
+                # Sort by confidence and take top candidates
+                potential_df = potential_df.sort_values('confidence', ascending=False).head(min(50, len(potential_df)))
+                
+                # Calculate contrast and combined score for each candidate
+                candidates = []
+                for _, row in potential_df.iterrows():
+                    image_name = row['image']
+                    
+                    # Find the source path
+                    input_folder = os.path.dirname(output_folder)
+                    source_path = None
+                    
+                    # Search for the image
+                    for root, _, files in os.walk(input_folder):
+                        if image_name in files:
+                            source_path = os.path.join(root, image_name)
+                            break
+                    
+                    if source_path:
+                        # Calculate contrast
+                        contrast = calculate_contrast(source_path)
+                        
+                        # Calculate category score (0-1)
+                        category_idx = category_priority.index(row['visibility']) if row['visibility'] in category_priority else 3
+                        category_score = (3 - category_idx) / 3.0
+                        
+                        # Combined score: 50% contrast, 30% confidence, 20% category
+                        combined_score = (contrast * 0.5) + (row['confidence'] * 0.3) + (category_score * 0.2)
+                        
+                        candidates.append({
+                            'row': row,
+                            'path': source_path,
+                            'contrast': contrast,
+                            'combined_score': combined_score
+                        })
+                
+                # Sort candidates by combined score and select top remaining
+                candidates.sort(key=lambda x: x['combined_score'], reverse=True)
+                selected_candidates = candidates[:remaining]
+                
+                for candidate in selected_candidates:
+                    row = candidate['row']
+                    source_path = candidate['path']
+                    contrast = candidate['contrast']
+                    combined_score = candidate['combined_score']
+                    
+                    # Add to highlights
+                    highlights.append(row)
+                    
+                    # Copy to highlights folder
+                    dest_path = os.path.join(highlight_dir, row['image'])
+                    import shutil
+                    shutil.copy2(source_path, dest_path)
+                    highlight_paths.append(dest_path)
+                    
+                    self.log_message(f"Selected additional highlight: {row['image']} (visibility: {row['visibility']}, confidence: {row['confidence']:.2f}, contrast: {contrast:.2f}, score: {combined_score:.2f})")
+            
+            # Create a summary HTML file
+            self.create_highlights_html(highlight_dir, highlights)
+            
+            self.log_message(f"Selected {len(highlight_paths)} highlight images. Saved to {highlight_dir}")
+            return highlight_paths
+            
+        except Exception as e:
+            self.log_message(f"Error selecting highlight images: {e}")
+            self.log_message(traceback.format_exc())
+            return []
+
+    def create_highlights_html(self, highlight_dir: str, highlights: List[Dict]) -> Optional[str]:
+        """
+        Create an HTML summary of highlight images
+        
+        Args:
+            highlight_dir: Directory with highlight images
+            highlights: List of highlight image data
+            
+        Returns:
+            Path to the created HTML file
+        """
+        try:
+            html_path = os.path.join(highlight_dir, "highlights.html")
+            
+            # Create HTML content
+            html_content = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Highlight Images</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 20px; }
+                    .gallery { display: flex; flex-wrap: wrap; }
+                    .item { margin: 10px; box-shadow: 0 0 5px #ccc; padding: 10px; }
+                    img { max-width: 300px; max-height: 300px; }
+                    .info { margin-top: 10px; }
+                    .category { font-weight: bold; }
+                    .good { color: green; }
+                    .low { color: orange; }
+                    .zero { color: red; }
+                    .great { color: blue; }
+                </style>
+            </head>
+            <body>
+                <h1>Highlight Images</h1>
+                <p>Selected representative images from the dataset</p>
+                <div class="gallery">
+            """
+            
+            # Add each highlight image
+            for highlight in highlights:
+                image_name = highlight['image']
+                visibility = highlight['visibility']
+                confidence = highlight['confidence']
+                
+                # Determine category CSS class
+                category_class = ""
+                if visibility == "zero_visibility":
+                    category_class = "zero"
+                elif visibility == "low_visibility":
+                    category_class = "low"
+                elif visibility == "good_visibility":
+                    category_class = "good"
+                elif visibility == "great_visibility":
+                    category_class = "great"
+                
+                # Add altitude if available
+                altitude_info = ""
+                if 'altitude' in highlight and highlight['altitude'] is not None:
+                    altitude_info = f"<div>Altitude: {highlight['altitude']:.2f}m</div>"
+                
+                html_content += f"""
+                    <div class="item">
+                        <img src="{image_name}" alt="{image_name}">
+                        <div class="info">
+                            <div class="filename">{image_name}</div>
+                            <div class="category {category_class}">Visibility Category: {visibility}</div>
+                            <div>Visibility Model Confidence: {confidence:.2f}</div>
+                            {altitude_info}
+                        </div>
+                    </div>
+                """
+            
+            # Close HTML
+            html_content += """
+                </div>
+            </body>
+            </html>
+            """
+            
+            # Write HTML file
+            with open(html_path, 'w') as f:
+                f.write(html_content)
+                
+            self.log_message(f"Created highlights summary: {html_path}")
+            return html_path
+            
+        except Exception as e:
+            self.log_message(f"Error creating highlights HTML: {e}")
+            return None
+
+    def process_highlight_images(self, input_folder: str, output_folder: str, count: int = 10) -> List[str]:
+        """
+        Process images and select highlights without running full visibility analysis
+        
+        Args:
+            input_folder: Folder with images
+            output_folder: Output directory
+            count: Number of highlight images to select
+            
+        Returns:
+            List of paths to selected highlight images
+        """
+        if not hasattr(self, 'visibility_stats') or not self.visibility_stats.get('analyzed_images'):
+            self.log_message("No analyzed images available. Cannot select highlights.")
+            return []
+        
+        return self.select_highlight_images(output_folder, count)
