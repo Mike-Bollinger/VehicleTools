@@ -149,8 +149,8 @@ class AltitudeMap:
             return None
     
     def create_altitude_histogram(self, gps_data: List[Dict], output_path: str, 
-                               filename: str = "altitude_histogram.png",
-                               max_display_altitude: float = 50.0) -> Optional[str]:
+                           filename: str = "altitude_histogram.png",
+                           max_display_altitude: float = 50.0) -> Optional[str]:
         """
         Create a histogram of image altitudes with a broken y-axis
         
@@ -158,7 +158,7 @@ class AltitudeMap:
             gps_data: List of dictionaries with GPS data
             output_path: Directory to save the output files
             filename: Filename for the generated histogram
-            max_display_altitude: Maximum altitude to display individually (m), higher values are binned
+            max_display_altitude: Maximum altitude to display (m), higher values are excluded
             
         Returns:
             Path to the saved plot file, or None if no data or error
@@ -168,10 +168,21 @@ class AltitudeMap:
         
         try:
             # Extract altitudes, filtering out missing values
-            altitudes = [point['altitude'] for point in gps_data if 'altitude' in point]
+            all_altitudes = [point['altitude'] for point in gps_data if 'altitude' in point]
+            
+            if not all_altitudes:
+                print("No altitude data found")
+                return None
+            
+            # Calculate how many values are above max_display_altitude for stats
+            above_max_count = sum(1 for alt in all_altitudes if alt > max_display_altitude)
+            above_max_pct = (above_max_count / len(all_altitudes)) * 100
+            
+            # Filter the data to include only values within display range
+            altitudes = [alt for alt in all_altitudes if alt <= max_display_altitude]
             
             if not altitudes:
-                print("No altitude data found")
+                print(f"No altitudes below {max_display_altitude}m found")
                 return None
             
             # Set up matplotlib for non-interactive use
@@ -181,7 +192,6 @@ class AltitudeMap:
             from matplotlib.ticker import MaxNLocator
             
             # Create a figure with GridSpec for a broken y-axis
-            # Make top pane smaller (1/3 of the height) compared to bottom pane (2/3 of the height)
             fig = plt.figure(figsize=(12, 8))
             gs = gridspec.GridSpec(2, 1, height_ratios=[1, 2], hspace=0.05)
             
@@ -189,19 +199,9 @@ class AltitudeMap:
             ax_top = fig.add_subplot(gs[0])
             ax_bottom = fig.add_subplot(gs[1], sharex=ax_top)
             
-            # Calculate range of altitudes
+            # Calculate range of altitudes within display range
             min_alt = min(altitudes)
             max_alt = max(altitudes)
-            alt_range = max_alt - min_alt
-            
-            # Handle outliers by capping display values at max_display_altitude
-            # For histogram purposes, bin all values above max_display_altitude
-            # Create a modified list for plotting
-            plot_altitudes = [min(alt, max_display_altitude) for alt in altitudes]
-            
-            # Calculate how many values are above max_display_altitude
-            above_max_count = sum(1 for alt in altitudes if alt > max_display_altitude)
-            above_max_pct = (above_max_count / len(altitudes)) * 100
             
             # Dynamically calculate number of bins based on dataset size
             if len(altitudes) > 10000:
@@ -218,76 +218,24 @@ class AltitudeMap:
             
             print(f"Using {n_bins} bins for altitude histogram with {len(altitudes)} data points")
             
-            # Define custom bin edges to focus on the relevant altitude range
-            # Make sure the bins extend from 0 to max_display_altitude
+            # Define bin edges from 0 to max_display_altitude
             bin_edges = np.linspace(0, max_display_altitude, n_bins)
             
-            # For histograms with clear indication of binned values at the end
-            # Make a copy of the bin edges to add a final bin for >50m data
-            extended_bin_edges = np.append(bin_edges, max_display_altitude * 1.05)  # Add one more bin slightly beyond max
-
-            # Create the histograms with modified altitudes
-            counts_top, bins_top, patches_top = ax_top.hist(plot_altitudes, bins=bin_edges, color='skyblue', 
+            # Create the histograms with filtered altitudes
+            counts_top, bins_top, patches_top = ax_top.hist(altitudes, bins=bin_edges, color='skyblue', 
                                                           edgecolor='black', alpha=0.7)
-            counts_bottom, bins_bottom, patches_bottom = ax_bottom.hist(plot_altitudes, bins=bin_edges, color='skyblue', 
+            counts_bottom, bins_bottom, patches_bottom = ax_bottom.hist(altitudes, bins=bin_edges, color='skyblue', 
                                                                       edgecolor='black', alpha=0.7)
-
-            # If there are values above max_display_altitude, add a special bin in red
-            if above_max_count > 0:
-                # Prepare data for the ">50m" bin
-                binned_data = np.array([max_display_altitude] * above_max_count)
-                
-                # Add a red bin at the end for values >50m (in both subplots)
-                # For top subplot
-                last_bin_top = ax_top.hist([max_display_altitude] * above_max_count, 
-                                         bins=[max_display_altitude * 0.96, max_display_altitude * 1.04], 
-                                         color='red', edgecolor='black', alpha=0.7)
-                
-                # For bottom subplot
-                last_bin_bottom = ax_bottom.hist([max_display_altitude] * above_max_count, 
-                                               bins=[max_display_altitude * 0.96, max_display_altitude * 1.04], 
-                                               color='red', edgecolor='black', alpha=0.7)
-                
-                # Add a text annotation for the binned values
-                max_count = max(counts_top)
-                y_pos = max_count * 0.9  # Position near top of the chart
-                
-                # Add text in top subplot
-                ax_top.text(max_display_altitude * 0.9, y_pos,
-                           f"{above_max_count} images > {max_display_altitude}m\n({above_max_pct:.1f}%)",
-                           color='red', fontweight='bold', ha='right', va='top',
-                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-                
-                # Special x-axis label for the binned values
-                # Add a special tick and label at the end of the x-axis for values >50m
-                # Get existing ticks
-                ticks = list(ax_bottom.get_xticks())
-                labels = [f"{t:.0f}" for t in ticks if t < max_display_altitude]
-                
-                # Add the special >50m tick
-                ticks.append(max_display_altitude)
-                labels.append(f">{max_display_altitude:.0f}m")
-                
-                # Set the custom ticks and labels
-                ax_bottom.set_xticks(ticks)
-                ax_bottom.set_xticklabels(labels)
-                
-                # Make the >50m label red
-                tick_labels = ax_bottom.get_xticklabels()
-                tick_labels[-1].set_color('red')
-                tick_labels[-1].set_fontweight('bold')
             
             # Calculate where to break the y-axis
-            max_count = max(counts_top)
+            max_count = max(counts_top) if len(counts_top) > 0 else 1
             
-            # Based on the data distribution in image_locations.csv:
-            # Use a fixed approach for more consistent visualization
-            # Set top plot to only show the highest peaks (usually the 4-5m range in your data)
+            # Set top plot to only show the highest peaks
             top_min = max_count * 0.2  # Show only the top 80% of the highest peak
             top_max = max_count * 1.05  # Add a little headroom at the top
             
-            # Set bottom plot to focus on lower counts to better see the distribution patterns
-            bottom_max = max_count * 0.10  # Show up to 10% of max in bottom plot
+            # Set bottom plot to focus on lower counts
+            bottom_max = max_count * 0.15  # Show up to 15% of max in bottom plot
             
             # Set the y-axis limits for both subplots
             ax_top.set_ylim(top_min, top_max)
@@ -306,8 +254,6 @@ class AltitudeMap:
             # Use class variable instead of local variable
             low_altitude_threshold = self.low_altitude_threshold
             
-            # Add vertical lines for the low and high altitude thresholds on both subplots
-            
             # Add high altitude threshold line (red)
             ax_top.axvline(x=self.altitude_threshold, color='red', linestyle='--', 
                          linewidth=2, label=f'High Threshold: {self.altitude_threshold}m')
@@ -321,24 +267,28 @@ class AltitudeMap:
                             linewidth=2)
             
             # Calculate the percentages of images in each category
-            below_low = sum(1 for alt in altitudes if alt < self.low_altitude_threshold)
-            optimal = sum(1 for alt in altitudes if self.low_altitude_threshold <= alt < self.altitude_threshold)
-            above_high = sum(1 for alt in altitudes if alt >= self.altitude_threshold)
+            below_low = sum(1 for alt in all_altitudes if alt < self.low_altitude_threshold)
+            optimal = sum(1 for alt in all_altitudes if self.low_altitude_threshold <= alt < self.altitude_threshold)
+            above_high = sum(1 for alt in all_altitudes if alt >= self.altitude_threshold)
             
-            below_low_pct = (below_low / len(altitudes)) * 100
-            optimal_pct = (optimal / len(altitudes)) * 100
-            above_high_pct = (above_high / len(altitudes)) * 100
+            below_low_pct = (below_low / len(all_altitudes)) * 100
+            optimal_pct = (optimal / len(all_altitudes)) * 100
+            above_high_pct = (above_high / len(all_altitudes)) * 100
             
             # Improve plot appearance
             ax_bottom.set_xlabel('Altitude (meters)', fontsize=12)
             ax_top.set_title('Image Altitude Distribution', fontsize=14)
             
-            # Set x-axis limit to include the special bin for values >50m
-            ax_bottom.set_xlim(0, max_display_altitude * 1.05)  # Add a small buffer for the >50m bin
+            # Set x-axis limit
+            ax_bottom.set_xlim(0, max_display_altitude)
             
             # Add subtitle showing full altitude range
-            if max_alt > max_display_altitude:
-                subtitle = f"Display limited to {max_display_altitude}m (full range: {min_alt:.1f}m - {max_alt:.1f}m)"
+            overall_min_alt = min(all_altitudes)
+            overall_max_alt = max(all_altitudes)
+            
+            if above_max_count > 0:
+                subtitle = f"Display limited to {max_display_altitude}m (full range: {overall_min_alt:.1f}m - {overall_max_alt:.1f}m)"
+                subtitle += f"\n{above_max_count} images ({above_max_pct:.1f}%) above {max_display_altitude}m excluded from plot"
                 ax_top.text(0.5, 0.95, subtitle, transform=ax_top.transAxes, 
                          fontsize=10, ha='center', va='top',
                          bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
@@ -351,10 +301,10 @@ class AltitudeMap:
             ax_bottom.xaxis.set_major_locator(MaxNLocator(nbins=10))  # Limit number of x-ticks
             
             # Add statistics annotation to top plot
-            stats_text = f'Total Images: {len(altitudes)}\n'
-            stats_text += f'Altitude Range: {min_alt:.2f}m - {max_alt:.2f}m\n'
-            stats_text += f'Mean: {np.mean(altitudes):.2f}m\n'
-            stats_text += f'Median: {np.median(altitudes):.2f}m\n'
+            stats_text = f'Total Images: {len(all_altitudes)}\n'
+            stats_text += f'Altitude Range: {overall_min_alt:.2f}m - {overall_max_alt:.2f}m\n'
+            stats_text += f'Mean: {np.mean(all_altitudes):.2f}m\n'
+            stats_text += f'Median: {np.median(all_altitudes):.2f}m\n'
             stats_text += f'Too Low (<{self.low_altitude_threshold}m): {below_low} images ({below_low_pct:.1f}%)\n'
             stats_text += f'Optimal ({self.low_altitude_threshold}-{self.altitude_threshold}m): {optimal} images ({optimal_pct:.1f}%)\n'
             stats_text += f'Too High (>{self.altitude_threshold}m): {above_high} images ({above_high_pct:.1f}%)'
@@ -392,84 +342,108 @@ class AltitudeMap:
                              csv_filename: str = "image_locations.csv",
                              shapefile_filename: str = "image_locations.shp") -> Dict[str, str]:
         """
-        Export GPS data to CSV and shapefile formats for GIS analysis
-        
-        Args:
-            gps_data: List of dictionaries with GPS and EXIF data
-            output_path: Directory to save the output files
-            csv_filename: Name for the CSV file
-            shapefile_filename: Name for the shapefile
-            
-        Returns:
-            Dictionary with paths to created files
+        Export GPS data to CSV and shapefile formats
         """
-        if not gps_data:
-            print("No GPS data to export")
-            return {}
-        
         result_files = {}
         
+        # Add this at the start of the function for debugging
+        print("\n--- STARTING CSV EXPORT ---")
+        
         try:
-            # Extract valid points (those with latitude and longitude)
-            valid_points = []
-            for point in gps_data:
-                if all(key in point for key in ['latitude', 'longitude']):
-                    # Create a copy to avoid modifying the original
-                    point_copy = point.copy()
-                    
-                    # Add altitude classification
-                    if 'altitude' in point:
-                        if point['altitude'] < self.low_altitude_threshold:
-                            point_copy['altitude_class'] = 'Too low'
-                        elif point['altitude'] < self.altitude_threshold:
-                            point_copy['altitude_class'] = 'Optimal'
-                        else:
-                            point_copy['altitude_class'] = 'Too high'
-                    else:
-                        point_copy['altitude_class'] = 'Unknown'
-                    
-                    # Copy width and height to ImageWidth and ImageHeight for consistency
-                    if 'width' in point and 'ImageWidth' not in point:
-                        point_copy['ImageWidth'] = point['width']
-                    if 'height' in point and 'ImageHeight' not in point:
-                        point_copy['ImageHeight'] = point['height']
-                        
-                    valid_points.append(point_copy)
+            # Filter out points with no latitude/longitude
+            valid_points = [p for p in gps_data if 'latitude' in p and 'longitude' in p]
             
             if not valid_points:
-                print("No valid GPS points found for export")
-                return {}
+                print("No valid GPS points to export")
+                return result_files
             
-            # Before creating the GeoDataFrame, fix any problematic data types
+            # Clean up attribute names and handle nested data
             valid_points_cleaned = []
             for point in valid_points:
-                # Create a clean copy with properly converted types
-                point_clean = {}
-                for key, value in point.items():
-                    # Convert PIL IFDRational to float for FNumber, FocalLength, etc.
-                    try:
-                        # Check if it's a PIL.TiffImagePlugin.IFDRational or similar
-                        if hasattr(value, 'numerator') and hasattr(value, 'denominator'):
-                            value = float(value.numerator) / float(value.denominator)
-                        # Convert other complex objects to string
-                        elif not isinstance(value, (str, int, float, bool, type(None))):
-                            value = str(value)
-                    except:
-                        value = str(value)
+                point_copy = point.copy()
+                
+                # Add altitude classification
+                if 'altitude' in point:
+                    if point['altitude'] < self.low_altitude_threshold:
+                        point_copy['altitude_class'] = 'Too low'
+                    elif point['altitude'] < self.altitude_threshold:
+                        point_copy['altitude_class'] = 'Optimal'
+                    else:
+                        point_copy['altitude_class'] = 'Too high'
+                else:
+                    point_copy['altitude_class'] = 'Unknown'
+                
+                # Copy width and height to ImageWidth and ImageHeight for consistency
+                if 'width' in point and 'ImageWidth' not in point:
+                    point_copy['ImageWidth'] = point['width']
+                    # If we've made the copy, remove the original to avoid duplication
+                    if 'width' in point_copy and 'width' != 'ImageWidth':
+                        del point_copy['width']
                         
-                    point_clean[key] = value
+                if 'height' in point and 'ImageHeight' not in point:
+                    point_copy['ImageHeight'] = point['height']
+                    # If we've made the copy, remove the original to avoid duplication
+                    if 'height' in point_copy and 'height' != 'ImageHeight':
+                        del point_copy['height']
                     
-                valid_points_cleaned.append(point_clean)
-            
-            # Use class variable instead of local variable
-            low_altitude_threshold = self.low_altitude_threshold
-            
+                # Extract EXIF data if it's nested
+                if 'exif' in point and isinstance(point['exif'], dict):
+                    for key, value in point['exif'].items():
+                        # Don't overwrite existing values
+                        if key not in point_copy:
+                            point_copy[key] = value
+                    
+                    # Remove the nested exif dictionary
+                    del point_copy['exif']
+                    
+                valid_points_cleaned.append(point_copy)
+                
             # Create a pandas DataFrame from the GPS data
             df = pd.DataFrame(valid_points_cleaned)
             
+            # After creating the DataFrame, but BEFORE any column ordering
+            print("INITIAL COLUMNS:", list(df.columns))
+            
+            # Check if an existing CSV file exists and load highlight metrics if it does
+            csv_path = os.path.join(output_path, csv_filename)
+            highlight_metrics = {}
+            existing_columns = []
+            
+            if os.path.exists(csv_path):
+                try:
+                    existing_df = pd.read_csv(csv_path)
+                    existing_columns = list(existing_df.columns)
+                    
+                    # Check if the existing file has metrics columns
+                    metric_columns = ['contrast', 'texture', 'color_variance', 'entropy', 'combined_score']
+                    has_metrics = any(col in existing_df.columns for col in metric_columns)
+                    
+                    if has_metrics:
+                        print(f"Found existing metrics in {csv_path}")
+                        
+                        # Create a mapping of filenames to metrics
+                        filename_col = 'filename'
+                        if filename_col in existing_df.columns:
+                            for _, row in existing_df.iterrows():
+                                if pd.isna(row[filename_col]):
+                                    continue
+                                    
+                                filename = row[filename_col]
+                                metrics_dict = {}
+                                
+                                for col in metric_columns:
+                                    if col in existing_df.columns and not pd.isna(row.get(col)):
+                                        metrics_dict[col] = row.get(col)
+                                
+                                if metrics_dict:  # Only add if we found some metrics
+                                    highlight_metrics[filename] = metrics_dict
+                except Exception as e:
+                    print(f"Error reading existing CSV: {e}")
+            
             # Add missing columns if they don't exist
-            for column in ["DateTime", "ExposureTime", "FNumber", "FocalLength", 
-                           "SubjectDistance", "ImageWidth", "ImageHeight"]:
+            for column in ["filename", "DateTime", "latitude", "longitude", "altitude", 
+                           "SubjectDistance", "ExposureTime", "FNumber", "FocalLength",
+                           "ImageWidth", "ImageHeight"]:
                 if column not in df.columns:
                     df[column] = "N/A"
             
@@ -484,39 +458,79 @@ class AltitudeMap:
             # Replace any NaN values with "N/A" for better CSV output
             df = df.fillna("N/A")
             
+            # Add highlight metrics to dataframe if available
+            if highlight_metrics:
+                # Initialize metric columns
+                metric_columns = ['contrast', 'texture', 'color_variance', 'entropy', 'combined_score']
+                for col in metric_columns:
+                    if col not in df.columns:
+                        df[col] = None
+                
+                # Add metrics data to the dataframe
+                for i, row in df.iterrows():
+                    if 'filename' in row and row['filename'] in highlight_metrics:
+                        for col, value in highlight_metrics[row['filename']].items():
+                            df.at[i, col] = value
+            
+            # Define the standard columns order - CRITICALLY IMPORTANT
+            # This defines the EXACT order of columns in the output CSV
+            standard_columns = [
+                "filename", "file_type", "DateTime", "latitude", "longitude", "altitude", "SubjectDistance",
+                "ExposureTime", "FNumber", "FocalLength", "ImageWidth", "ImageHeight"
+            ]
+
+            # Get metric columns if they exist
+            metric_columns = ['contrast', 'texture', 'color_variance', 'entropy', 'combined_score']
+
+            # First identify which standard columns actually exist in our data
+            available_std_cols = [col for col in standard_columns if col in df.columns]
+
+            # Then identify which metric columns exist
+            available_metric_cols = [col for col in metric_columns if col in df.columns]
+
+            # Get all other columns that aren't in either list
+            other_cols = [col for col in df.columns 
+                          if col not in standard_columns and col not in metric_columns]
+
+            # Construct the final column order: standard columns, then other columns, then metrics
+            final_columns = available_std_cols + other_cols + available_metric_cols
+            print("FINAL COLUMN ORDER:", final_columns)
+
+            # Reorder the DataFrame with our desired column order
+            df = df[final_columns]
+            
             # Export to CSV
             csv_path = os.path.join(output_path, csv_filename)
             df.to_csv(csv_path, index=False)
+            print("CSV EXPORTED WITH COLUMNS:", list(df.columns))
             result_files['csv'] = csv_path
             print(f"GPS data exported to CSV: {csv_path}")
             
             # Export to shapefile if geopandas is available
             if GEOPANDAS_AVAILABLE:
-                try:
-                    # Create geometry column (Point objects) from latitude and longitude
-                    points = [Point(point['longitude'], point['latitude']) for point in valid_points_cleaned]
-                    
-                    # Create GeoDataFrame
-                    gdf = gpd.GeoDataFrame(valid_points_cleaned, geometry=points)
-                    
-                    # Set coordinate reference system (CRS) to WGS84
-                    gdf.crs = "EPSG:4326"  # WGS84 - standard GPS coordinate system
-                    
-                    # Export to shapefile
-                    shapefile_path = os.path.join(output_path, shapefile_filename)
-                    gdf.to_file(shapefile_path)
-                    result_files['shapefile'] = shapefile_path
-                    print(f"GPS data exported to shapefile: {shapefile_path}")
-                    
-                except Exception as e:
-                    print(f"Error creating shapefile: {e}")
+                # Create a GeoDataFrame
+                geometry = [Point(xy) for xy in zip(df['longitude'], df['latitude'])]
+                gdf = gpd.GeoDataFrame(df, geometry=geometry)
+                
+                # Set coordinate reference system (WGS84)
+                gdf.crs = "EPSG:4326"
+                
+                # Export to shapefile
+                shapefile_path = os.path.join(output_path, shapefile_filename)
+                gdf.to_file(shapefile_path)
+                result_files['shapefile'] = shapefile_path
+                print(f"GPS data exported to shapefile: {shapefile_path}")
             else:
-                print("Geopandas not available. Skipping shapefile creation.")
+                print("Geopandas not available, skipping shapefile export")
             
+            print("--- CSV EXPORT COMPLETED ---\n")
             return result_files
+            
         except Exception as e:
-            print(f"Error exporting GIS formats: {e}")
-            return {}
+            print(f"Error exporting GPS data: {e}")
+            import traceback
+            print(traceback.format_exc())
+            return result_files
 
     def extract_exif_data(self, image_path: str) -> Dict:
         """Extract EXIF data and image dimensions from an image file"""

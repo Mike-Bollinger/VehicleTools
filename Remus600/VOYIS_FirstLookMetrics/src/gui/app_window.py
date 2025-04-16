@@ -9,6 +9,7 @@ from models.metrics import Metrics
 from models.altitude_map import GEOPANDAS_AVAILABLE, AltitudeMap
 from src.models.footprint_map import FootprintMap
 from src.models.visibility_analyzer import VisibilityAnalyzer
+from src.models.highlight_selector import HighlightSelector
 from datetime import datetime
 import numpy as np
 import time
@@ -17,6 +18,10 @@ class AppWindow:
     def __init__(self, root):
         self.root = root
         self.master = root  # For compatibility with some tkinter code
+        
+        # Create a custom style for the process button
+        style = ttk.Style()
+        style.configure("AccentButton.TButton", font=('', 10, 'bold'))
         
         # Initialize AltitudeMap
         self.altitude_map = AltitudeMap()
@@ -34,6 +39,8 @@ class AppWindow:
         self.location_map_var = tk.BooleanVar(value=True)
         self.histogram_var = tk.BooleanVar(value=True)
         self.footprint_map_var = tk.BooleanVar(value=True)
+        self.visibility_analyzer_var = tk.BooleanVar(value=True)  # Changed to True
+        self.highlight_selector_var = tk.BooleanVar(value=True)  # Changed to True
         self.nav_path = tk.StringVar()
         self.threshold_var = tk.StringVar(value="8.0")  # String for text entry
         
@@ -47,6 +54,15 @@ class AppWindow:
         # Create GUI elements
         self.create_frames()
         
+        # Initialize components
+        self.metrics = Metrics(self.altitude_threshold)
+        self.altitude_map = AltitudeMap()
+        self.altitude_map.set_altitude_thresholds(self.altitude_threshold, 4.0)
+        self.footprint_map = FootprintMap(self.altitude_threshold)
+        
+        # Initialize highlight selector
+        self.highlight_selector = HighlightSelector()
+        
         # Create metrics, altitude map and footprint map objects with the threshold
         self.metrics = Metrics(self.altitude_threshold)
         self.altitude_map.set_altitude_thresholds(self.altitude_threshold, 4.0)  # Set both thresholds
@@ -57,10 +73,13 @@ class AppWindow:
         self.visibility_analyzer = VisibilityAnalyzer()
         self.visibility_analyzer.altitude_threshold = self.altitude_threshold
         
-        # Create the rest of the UI components
+        # Create the UI components in the correct order
+        # First create the log section so log_message works
+        self.create_log_section()
+        
+        # Then create the rest of the UI
         self.create_input_section()
         self.create_functions_section()
-        self.create_log_section()
         
         # Make sure the navigation file selection is visible if footprint map is checked by default
         self.update_nav_file_visibility()
@@ -72,15 +91,31 @@ class AppWindow:
         self.location_map_var.set(state)
         self.histogram_var.set(state)
         self.footprint_map_var.set(state)
+        self.visibility_analyzer_var.set(state)  # Added this line
+        self.highlight_selector_var.set(state)   # Added this line
+        
+        # Update UI based on new state
         self.update_nav_file_visibility()
-    
+        
+        # Show/hide visibility options based on checkbox state
+        if state:
+            self.toggle_visibility_options()  # Make sure visibility options appear if checked
+        else:
+            self.visibility_model_frame.grid_remove()  # Hide when unchecked
+
     def update_all_checkbox(self):
         """Update 'All Functions' checkbox based on individual checkboxes"""
-        if all([self.basic_metrics_var.get(), self.location_map_var.get(), 
-                self.histogram_var.get(), self.footprint_map_var.get()]):
+        if all([self.basic_metrics_var.get(), 
+                self.location_map_var.get(), 
+                self.histogram_var.get(), 
+                self.footprint_map_var.get(),
+                self.visibility_analyzer_var.get(),  # Added this line
+                self.highlight_selector_var.get()    # Added this line
+               ]):
             self.all_var.set(True)
         else:
             self.all_var.set(False)
+        
         # Show/hide nav file selection based on footprint map checkbox
         self.update_nav_file_visibility()
 
@@ -281,32 +316,47 @@ class AppWindow:
                             else:
                                 self.log_message("Error: Could not create location map. No valid GPS coordinates found.")
                                 
-                            # Create CSV export (use existing method if available)
-                            self.log_message("Creating GPS data CSV export...")
-                            
+                            # Create CSV and shapefile export using AltitudeMap's export_to_gis_formats method
+                            self.log_message("Creating GPS data exports (CSV and shapefile)...")
+
                             try:
-                                # Use the appropriate method based on what's available
-                                if hasattr(self.altitude_map, 'create_gps_csv'):
-                                    csv_file = self.altitude_map.create_gps_csv(
-                                        self.metrics.gps_data,
-                                        output_folder
-                                    )
-                                    if csv_file:
-                                        self.log_message(f"CSV export saved to: {csv_file}")
-                                    
-                                # Otherwise save using metrics directly
-                                else:
-                                    csv_path = os.path.join(output_folder, "image_locations.csv")
-                                    try:
-                                        import pandas as pd
-                                        df = pd.DataFrame(self.metrics.gps_data)
-                                        df.to_csv(csv_path, index=False)
-                                        self.log_message(f"CSV export saved to: {csv_path}")
-                                    except Exception as csv_err:
-                                        self.log_message(f"Error creating CSV export: {str(csv_err)}")
+                                # Use the export_to_gis_formats method from AltitudeMap
+                                result_files = self.altitude_map.export_to_gis_formats(
+                                    self.metrics.gps_data,
+                                    output_folder
+                                )
                                 
+                                if 'csv' in result_files:
+                                    self.log_message(f"CSV export saved to: {result_files['csv']}")
+                                    
+                                if 'shapefile' in result_files and GEOPANDAS_AVAILABLE:
+                                    self.log_message(f"Shapefile export saved to: {result_files['shapefile']}")
+                                    
                             except Exception as e:
-                                self.log_message(f"Error creating CSV export: {str(e)}")
+                                # Fall back to the simple CSV export if the GIS export fails
+                                self.log_message(f"Error creating GIS exports: {str(e)}")
+                                
+                                try:
+                                    csv_path = os.path.join(output_folder, "image_locations.csv")
+                                    import pandas as pd
+                                    df = pd.DataFrame(self.metrics.gps_data)
+                                    
+                                    # Define column order before saving
+                                    columns = ["filename", "DateTime", "latitude", "longitude", "altitude", 
+                                              "SubjectDistance", "ExposureTime", "FNumber", "FocalLength",
+                                              "width", "height"]
+                                              
+                                    # Only include columns that exist in the dataframe
+                                    available_cols = [col for col in columns if col in df.columns]
+                                    other_cols = [col for col in df.columns if col not in columns]
+                                    
+                                    # Reorder columns
+                                    df = df[available_cols + other_cols]
+                                    
+                                    df.to_csv(csv_path, index=False)
+                                    self.log_message(f"CSV export saved to: {csv_path}")
+                                except Exception as csv_err:
+                                    self.log_message(f"Error creating CSV export: {str(csv_err)}")
                         except Exception as e:
                             self.log_message(f"Error creating location map: {str(e)}")
                     
@@ -505,6 +555,17 @@ class AppWindow:
                         import traceback
                         self.log_message(traceback.format_exc())
             
+            # STAGE 5: Highlight Image Selection
+            if self.highlight_selector_var.get():
+                self.log_message("\nSTAGE 5: Selecting highlight images...")
+                
+                success = self.select_highlight_images(input_folder, output_folder)
+                
+                if success:
+                    self.log_message("Highlight image selection completed successfully")
+                else:
+                    self.log_message("Error during highlight image selection")
+            
             self.log_message("\nAll selected processing tasks completed successfully.")
             
         except Exception as e:
@@ -643,8 +704,7 @@ class AppWindow:
         self.functions_frame = ttk.LabelFrame(self.left_frame, text="Analysis Functions", padding="5")
         self.functions_frame.pack(fill=tk.X, pady=(0, 10))
         
-        self.action_frame = ttk.Frame(self.left_frame, padding="5")
-        self.action_frame.pack(fill=tk.X)
+        # Removed action_frame - process button will be added later
         
         # Create log frame in right frame
         self.log_frame = ttk.LabelFrame(self.right_frame, text="Processing Log", padding="5")
@@ -682,11 +742,13 @@ class AppWindow:
         self.location_map_var = tk.BooleanVar(value=True)
         self.histogram_var = tk.BooleanVar(value=True)
         self.footprint_map_var = tk.BooleanVar(value=True)
-        self.visibility_analyzer_var = tk.BooleanVar(value=False)  # Off by default
+        self.visibility_analyzer_var = tk.BooleanVar(value=True)
+        self.highlight_selector_var = tk.BooleanVar(value=True)
 
         # We'll use this to track the row for dynamic positioning
         self.current_row = 0
         
+        # Analysis Functions section
         self.all_check = ttk.Checkbutton(
             self.functions_frame,
             text="All Functions",
@@ -755,8 +817,8 @@ class AppWindow:
         )
         self.visibility_analyzer_check.grid(row=self.current_row, column=0, sticky='w', padx=25, pady=2)
         self.current_row += 1
-        
-        # Add a note about computational intensity below the checkbox
+
+        # Add a note about computational intensity below the visibility checkbox
         self.vis_note_label = ttk.Label(
             self.functions_frame,
             text="(Visibility analysis is computationally intensive and may take a long time)",
@@ -764,13 +826,21 @@ class AppWindow:
         )
         self.vis_note_label.grid(row=self.current_row, column=0, sticky='w', padx=45, pady=(0, 5))
         self.current_row += 1
-        
+
         # Make the visibility frame wider to show all options
         # Use a LabelFrame for better visual separation and more space
         self.visibility_model_frame = ttk.LabelFrame(self.functions_frame, text="Visibility Analysis Options")
-        self.visibility_model_frame.grid(row=self.current_row, column=0, sticky='ew', padx=25, pady=(0, 5))
-        self.visibility_model_frame.grid_remove()  # Hide it initially
-        self.visibility_model_row = self.current_row
+        # Note: We don't grid it here - it will be positioned by toggle_visibility_options
+        self.visibility_model_row = self.current_row  # Store the correct position
+        self.current_row += 1  # Still increment for spacing
+
+        # Add highlight image selector checkbox
+        self.highlight_selector_check = ttk.Checkbutton(
+            self.functions_frame, 
+            text="Select Highlight Images", 
+            variable=self.highlight_selector_var
+        )
+        self.highlight_selector_check.grid(row=self.current_row, column=0, sticky='w', padx=25, pady=2)
         self.current_row += 1
         
         # Configure column weights to make the frame expand properly
@@ -829,86 +899,98 @@ class AppWindow:
         )
         self.help_button.grid(row=2, column=0, columnspan=3, pady=(0, 10))
         
-        # Create the altitude threshold controls
+        # Create a separate LabelFrame for the altitude threshold - CLEARLY SEPARATED FROM FUNCTIONS
+        # Create threshold frame after functions frame
+        self.threshold_frame = ttk.LabelFrame(self.left_frame, text="Altitude Threshold")
+        self.threshold_frame.pack(fill=tk.X, pady=(10, 10))
+        
+        # Create a frame inside the LabelFrame for better layout
+        threshold_content = ttk.Frame(self.threshold_frame)
+        threshold_content.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Add altitude threshold controls
+        ttk.Label(threshold_content, text="Altitude Threshold (m):").grid(row=0, column=0, sticky='w', padx=(0, 5))
+        
         self.threshold_var = tk.StringVar(value=str(self.altitude_threshold))
-        
-        # Create a separate frame for the altitude threshold
-        self.threshold_frame = ttk.Frame(self.functions_frame)
-        self.threshold_row = self.current_row  # Store this row number for reference
-        self.threshold_frame.grid(row=self.threshold_row, column=0, sticky='w', pady=5)
-        
-        # Add altitude threshold controls to the threshold frame
-        ttk.Label(self.threshold_frame, text="Altitude Threshold (m):").grid(row=0, column=0, sticky='w', padx=(0, 5))
-        
-        threshold_entry = ttk.Entry(self.threshold_frame, textvariable=self.threshold_var, width=6)
+        threshold_entry = ttk.Entry(threshold_content, textvariable=self.threshold_var, width=6)
         threshold_entry.grid(row=0, column=1, padx=5, sticky='w')
         
-        apply_button = ttk.Button(self.threshold_frame, text="Apply", command=self.update_threshold)
+        apply_button = ttk.Button(threshold_content, text="Apply", command=self.update_threshold)
         apply_button.grid(row=0, column=2, padx=5, sticky='w')
-        
-        self.current_row += 1
         
         # Add explanation text for altitude threshold
         ttk.Label(
-            self.functions_frame, 
-            text="(Altitude threshold filters out images that are too high to see the seabed)",
+            threshold_content, 
+            text="(Filters out images that are too high to see the seabed)",
             font=("", 8, "italic")
-        ).grid(row=self.current_row, column=0, sticky='w', pady=(0, 10), padx=25)
-        self.current_row += 1
+        ).grid(row=1, column=0, columnspan=3, sticky='w', pady=(5, 0))
         
-        # Add process button in the action frame
+        # Add process button as the last element in the left frame (below everything else)
+        process_button_frame = ttk.Frame(self.left_frame)
+        process_button_frame.pack(fill=tk.X, pady=(10, 0))
+        
         self.process_button = ttk.Button(
-            self.action_frame,
+            process_button_frame,
             text="Process Images",
-            command=self.process_images
+            command=self.process_images,
+            style="AccentButton.TButton"  # Apply a custom style to make it stand out
         )
-        self.process_button.grid(row=0, column=0, pady=10, padx=10)
+        self.process_button.pack(fill=tk.X, padx=10, pady=10, ipady=5)  # Make button taller with ipady
+
+        # Since visibility analysis is checked by default, show the options immediately
+        if self.visibility_analyzer_var.get():
+            self.toggle_visibility_options()
+
+        # Since footprint map is checked by default, show nav file selection immediately  
+        if self.footprint_map_var.get():
+            self.update_nav_file_visibility()
 
     def toggle_visibility_options(self):
         """Show or hide visibility analysis options based on checkbox state"""
         if self.visibility_analyzer_var.get():
-            # Show the model frame
-            self.visibility_model_frame.grid()
-            
-            # Move the threshold frame below the visibility options
-            self.threshold_frame.grid_forget()  # Remove from current position
-            self.threshold_frame.grid(row=self.visibility_model_row + 1, column=0, sticky='w', pady=5)
+            # Show the model frame - position it right after the visibility checkbox
+            self.visibility_model_frame.grid_remove()  # Remove first to make sure it's properly positioned
+            self.visibility_model_frame.grid(row=self.vis_note_label.grid_info()['row'] + 1, 
+                                           column=0, sticky='ew', padx=25, pady=(0, 5))
             
             # Set default path in the model entry field instead of showing a dialog
-            if not self.model_path.get() and not self.training_path.get():
-                # Get the default models directory
-                default_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                                       "v_a_pre-trained_models")
+            if not hasattr(self, 'model_path_initialized') or not self.model_path_initialized:
+                self.model_path_initialized = True  # Mark as initialized
                 
-                # Look for existing .h5 files in that directory
-                if os.path.exists(default_dir):
-                    model_files = [f for f in os.listdir(default_dir) if f.endswith('.h5')]
-                    if model_files:
-                        # Use the most recent model file based on filename (assuming timestamp in name)
-                        model_files.sort(reverse=True)  # Sort in descending order
-                        default_model = os.path.join(default_dir, model_files[0])
-                        self.model_path.set(default_model)
-                        self.log_message(f"Default visibility model: {default_model}")
+                if not self.model_path.get() and not self.training_path.get():
+                    # Get the default models directory
+                    default_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                                           "v_a_pre-trained_models")
+                    
+                    # Look for existing .h5 files in that directory
+                    if os.path.exists(default_dir):
+                        model_files = [f for f in os.listdir(default_dir) if f.endswith('.h5')]
+                        if model_files:
+                            # Use the most recent model file based on filename (assuming timestamp in name)
+                            model_files.sort(reverse=True)  # Sort in descending order
+                            default_model = os.path.join(default_dir, model_files[0])
+                            self.model_path.set(default_model)
+                            # Only log if log_text exists
+                            if hasattr(self, 'log_text'):
+                                self.log_message(f"Default visibility model: {default_model}")
+                        else:
+                            # No model files found, just set the directory
+                            self.model_path.set(default_dir)
+                            if hasattr(self, 'log_text'):
+                                self.log_message(f"No model files found in default directory. Please select a model.")
                     else:
-                        # No model files found, just set the directory
+                        # Default directory doesn't exist, create it and set the path
+                        os.makedirs(default_dir, exist_ok=True)
                         self.model_path.set(default_dir)
-                        self.log_message(f"No model files found in default directory. Please select a model.")
-                else:
-                    # Default directory doesn't exist, create it and set the path
-                    os.makedirs(default_dir, exist_ok=True)
-                    self.model_path.set(default_dir)
-                    self.log_message(f"Please select a visibility model file.")
-                
-                # Make sure model radio is selected by default
-                self.model_type_var.set("model")
-                self.on_model_radio_select()
+                        if hasattr(self, 'log_text'):
+                            self.log_message(f"Please select a visibility model file.")
+                    
+                    # Make sure model radio is selected by default
+                    self.model_type_var.set("model")
+                    self.on_model_radio_select()
         else:
             # Hide the model frame
             self.visibility_model_frame.grid_remove()
-            
-            # Move the threshold frame back to its original position
-            self.threshold_frame.grid_forget()  # Remove from current position
-            self.threshold_frame.grid(row=self.threshold_row, column=0, sticky='w', pady=5)
         
         self.update_all_checkbox()
 
@@ -978,6 +1060,14 @@ class AppWindow:
             self.metrics.altitude_threshold = new_threshold
             self.altitude_map.set_altitude_thresholds(new_threshold, 4.0)  # Keep low threshold at 4m
             
+            # Update the footprint map if it exists
+            if hasattr(self, 'footprint_map'):
+                self.footprint_map.altitude_threshold = new_threshold
+                
+            # Update the visibility analyzer if it exists
+            if hasattr(self, 'visibility_analyzer'):
+                self.visibility_analyzer.altitude_threshold = new_threshold
+                
             # Log the change
             self.log_message(f"Altitude threshold set to {new_threshold:.1f}m")
             
@@ -1104,3 +1194,41 @@ The visibility categories represent:
         self.training_entry.config(state=tk.DISABLED)
         self.training_button.config(state=tk.DISABLED)
         self.help_button.config(state=tk.DISABLED)
+
+    def select_highlight_images(self, input_folder, output_folder):
+        """Select highlight images from the dataset"""
+        self.log_message("Selecting highlight images from the dataset...")
+        
+        try:
+            # Get visibility results if available from a previous analysis
+            visibility_results = None
+            if hasattr(self, 'visibility_analyzer') and hasattr(self.visibility_analyzer, 'visibility_stats'):
+                visibility_results = self.visibility_analyzer.visibility_stats
+            
+            # Define min altitude threshold 
+            min_altitude_threshold = 4.0
+            
+            # Call the highlight selector with our app's altitude threshold
+            highlight_paths = self.highlight_selector.select_highlights(
+                input_folder=input_folder,
+                output_folder=output_folder,
+                count=10,  # Select 10 highlight images
+                progress_callback=self.update_progress,
+                altitude_threshold=self.altitude_threshold,
+                min_altitude_threshold=min_altitude_threshold,
+                visibility_results=visibility_results
+            )
+            
+            if highlight_paths:
+                self.log_message(f"Successfully selected {len(highlight_paths)} highlight images")
+                self.log_message(f"Highlight images saved to: {os.path.join(output_folder, 'highlight_images')}")
+            else:
+                self.log_message("No highlight images were selected")
+                
+            return True
+                
+        except Exception as e:
+            self.log_message(f"Error during highlight image selection: {str(e)}")
+            import traceback
+            self.log_message(traceback.format_exc())
+            return False
