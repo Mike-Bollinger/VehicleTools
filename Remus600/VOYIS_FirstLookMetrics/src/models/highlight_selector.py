@@ -1160,7 +1160,7 @@ class HighlightSelector:
             # Make sure the imports are done correctly
             self._ensure_imports()
             
-            # Explicitly import matplotlib here if it's not already available
+            # Explicitly import matplotlib and PIL here if not already available
             if self._plt is None:
                 try:
                     import matplotlib.pyplot as plt
@@ -1169,12 +1169,130 @@ class HighlightSelector:
                     print("Error: Matplotlib is required for creating highlight panels")
                     return None
                     
-            # Now import gridspec
+            # Import ExifTags and PIL modules for EXIF extraction
+            try:
+                from PIL import Image, ExifTags
+                GPSTAGS = {
+                    0: "GPSVersionID",
+                    1: "GPSLatitudeRef",
+                    2: "GPSLatitude",
+                    3: "GPSLongitudeRef",
+                    4: "GPSLongitude",
+                    5: "GPSAltitudeRef",
+                    6: "GPSAltitude"
+                }
+            except ImportError:
+                print("Error: PIL is required for EXIF data extraction")
+                return None
+            
+            # Import gridspec
             try:
                 import matplotlib.gridspec as gridspec
             except ImportError:
                 print("Error: Matplotlib gridspec is required for creating highlight panels")
                 return None
+            
+            # Helper function to convert GPS coordinates - defined BEFORE it's used
+            def _convert_to_degrees(value):
+                try:
+                    if isinstance(value, tuple) and len(value) == 3:
+                        degrees = float(value[0][0]) / float(value[0][1])
+                        minutes = float(value[1][0]) / float(value[1][1])
+                        seconds = float(value[2][0]) / float(value[2][1])
+                        
+                        return degrees + (minutes / 60.0) + (seconds / 3600.0)
+                    else:
+                        # Handle rationals stored differently
+                        d, m, s = 0, 0, 0
+                        if len(value) > 0:
+                            d = float(value[0].numerator) / float(value[0].denominator) if hasattr(value[0], 'numerator') else float(value[0][0]) / float(value[0][1])
+                        if len(value) > 1:
+                            m = float(value[1].numerator) / float(value[1].denominator) if hasattr(value[1], 'numerator') else float(value[1][0]) / float(value[1][1])
+                        if len(value) > 2:
+                            s = float(value[2].numerator) / float(value[2].denominator) if hasattr(value[2], 'numerator') else float(value[2][0]) / float(value[2][1])
+                        return d + (m / 60.0) + (s / 3600.0)
+                except Exception as e:
+                    print(f"Error converting GPS value: {e}, value: {value}")
+                    return 0.0
+            
+            # Helper function to extract GPS data from EXIF
+            def extract_gps_data(img_path):
+                try:
+                    with Image.open(img_path) as img:
+                        exif_data = img._getexif()
+                        if not exif_data:
+                            print(f"No EXIF data found in {img_path}")
+                            return None
+                        
+                        # Convert EXIF tag numbers to readable names
+                        exif = {
+                            ExifTags.TAGS.get(tag, tag): value
+                            for tag, value in exif_data.items()
+                            if tag in ExifTags.TAGS
+                        }
+                        
+                        # Debug - print all EXIF data to find GPS info
+                        print(f"EXIF data keys for {os.path.basename(img_path)}: {list(exif.keys())}")
+                        
+                        # Extract GPS info if available
+                        if 'GPSInfo' not in exif:
+                            print(f"No GPSInfo found in {img_path}")
+                            return None
+                        
+                        # Process GPS data
+                        gps_info = {}
+                        for key, val in exif['GPSInfo'].items():
+                            tag_name = GPSTAGS.get(key, key)
+                            gps_info[tag_name] = val
+                        
+                        print(f"GPS info keys: {list(gps_info.keys())}")
+                        
+                        result = {}
+                        
+                        # Extract latitude
+                        if 'GPSLatitude' in gps_info and 'GPSLatitudeRef' in gps_info:
+                            lat = _convert_to_degrees(gps_info['GPSLatitude'])
+                            if gps_info['GPSLatitudeRef'] == 'S':
+                                lat = -lat
+                            result['latitude'] = lat
+                            print(f"Found latitude: {lat}")
+                        
+                        # Extract longitude
+                        if 'GPSLongitude' in gps_info and 'GPSLongitudeRef' in gps_info:
+                            lon = _convert_to_degrees(gps_info['GPSLongitude'])
+                            if gps_info['GPSLongitudeRef'] == 'W':
+                                lon = -lon
+                            result['longitude'] = lon
+                            print(f"Found longitude: {lon}")
+                        
+                        # Extract altitude
+                        if 'GPSAltitude' in gps_info:
+                            try:
+                                if isinstance(gps_info['GPSAltitude'], tuple) and len(gps_info['GPSAltitude']) == 2:
+                                    altitude = float(gps_info['GPSAltitude'][0]) / float(gps_info['GPSAltitude'][1])
+                                elif hasattr(gps_info['GPSAltitude'], 'numerator') and hasattr(gps_info['GPSAltitude'], 'denominator'):
+                                    altitude = float(gps_info['GPSAltitude'].numerator) / float(gps_info['GPSAltitude'].denominator)
+                                else:
+                                    altitude = float(gps_info['GPSAltitude'])
+                                    
+                                if 'GPSAltitudeRef' in gps_info and gps_info['GPSAltitudeRef'] == 1:
+                                    altitude = -altitude
+                                
+                                result['altitude'] = altitude
+                                print(f"Found altitude: {altitude}")
+                            except (ValueError, TypeError, ZeroDivisionError) as e:
+                                print(f"Error parsing altitude: {e}, value: {gps_info['GPSAltitude']}")
+                        
+                        # If we found either lat/lon or altitude, return the result
+                        if result:
+                            return result
+                        return None
+                        
+                except Exception as e:
+                    print(f"Error extracting EXIF data from {img_path}: {e}")
+                    import traceback
+                    print(traceback.format_exc())
+                    return None
             
             # Get the top N images sorted by combined score
             top_df = metrics_df.sort_values('combined_score', ascending=False).head(top_count)
@@ -1187,6 +1305,9 @@ class HighlightSelector:
             
             # Track if we found all images
             all_images_found = True
+            
+            # Debug: Print available columns in the DataFrame
+            print(f"Available columns in metrics_df: {list(metrics_df.columns)}")
             
             # Add each image to the grid
             for i, (_, row) in enumerate(top_df.iterrows()):
@@ -1210,33 +1331,44 @@ class HighlightSelector:
                     ax.imshow(img)
                     
                     # Use only filename without extension as title
-                    # Make title smaller to reduce whitespace
                     title = f"{os.path.splitext(os.path.basename(filename))[0]}"
                     ax.set_title(title, fontsize=8, pad=2)  # Reduced padding
                     
-                    # Initialize metrics text - only include location and visibility data
+                    # Initialize metrics text - only include location and altitude data
                     metrics_text = ""
                     
-                    # Add latitude and longitude if available
-                    if 'latitude' in row and 'longitude' in row and not self._pd.isna(row['latitude']) and not self._pd.isna(row['longitude']):
-                        metrics_text += f"Lat: {row['latitude']:.5f}\nLon: {row['longitude']:.5f}"
+                    # First try to directly use dataframe values if available
+                    lat_val = None
+                    lon_val = None
                     
-                    # Add altitude if available
-                    if 'altitude' in row and not self._pd.isna(row['altitude']):
-                        # Add a newline if text isn't empty
-                        if metrics_text:
-                            metrics_text += "\n"
-                        metrics_text += f"Alt: {row['altitude']:.1f}m"
-                    
-                    # Add visibility if available
-                    if 'visibility_category' in row and not self._pd.isna(row['visibility_category']):
-                        vis_category = row['visibility_category'].replace('_visibility', '')
-                        vis_confidence = row['visibility_confidence']
+                    if 'latitude' in row and not self._pd.isna(row['latitude']):
+                        lat_val = row['latitude']
+                    if 'longitude' in row and not self._pd.isna(row['longitude']):
+                        lon_val = row['longitude']
                         
-                        # Add a newline if text isn't empty
+                    if lat_val is not None and lon_val is not None:
+                        print(f"Using lat/lon from dataframe for {filename}: {lat_val}, {lon_val}")
+                        metrics_text += f"Lat: {float(lat_val):.5f}\nLon: {float(lon_val):.5f}"
+                    else:
+                        # If not in dataframe, extract EXIF GPS data directly from the image
+                        print(f"Attempting to extract EXIF data for {filename}")
+                        gps_data = extract_gps_data(img_path)
+                        
+                        if gps_data:
+                            # Add lat/lon to text if both are available
+                            if 'latitude' in gps_data and 'longitude' in gps_data:
+                                metrics_text += f"Lat: {gps_data['latitude']:.5f}\nLon: {gps_data['longitude']:.5f}"
+                                print(f"Got lat/lon from EXIF for {filename}")
+                    
+                    # Add altitude - first try dataframe, then EXIF if needed
+                    if 'altitude' in row and not self._pd.isna(row['altitude']):
                         if metrics_text:
                             metrics_text += "\n"
-                        metrics_text += f"Vis: {vis_category.capitalize()} ({vis_confidence:.2f})"
+                        metrics_text += f"Alt: {float(row['altitude']):.1f}m"
+                    elif gps_data and 'altitude' in gps_data:
+                        if metrics_text:
+                            metrics_text += "\n"
+                        metrics_text += f"Alt: {gps_data['altitude']:.1f}m"
                     
                     # Add text box with metrics, position in corner with minimal padding
                     # Only add text box if we have metrics to show
@@ -1251,6 +1383,8 @@ class HighlightSelector:
                     
                 except Exception as e:
                     print(f"Error adding image to panel: {e}")
+                    import traceback
+                    print(traceback.format_exc())
                     ax.text(0.5, 0.5, f"Error loading image:\n{filename}", 
                            ha='center', va='center')
                     all_images_found = False
