@@ -13,6 +13,8 @@ from src.models.highlight_selector import HighlightSelector
 from datetime import datetime
 import numpy as np
 import time
+import pandas as pd
+import csv
 
 class AppWindow:
     def __init__(self, root):
@@ -43,6 +45,8 @@ class AppWindow:
         self.highlight_selector_var = tk.BooleanVar(value=True)  # Changed to True
         self.nav_path = tk.StringVar()
         self.threshold_var = tk.StringVar(value="8.0")  # String for text entry
+        self.batch_mode = False
+        self.batch_csv_path = tk.StringVar()
         
         # Set all functions to True if all individual options are True
         if all([self.basic_metrics_var.get(), self.location_map_var.get(),
@@ -214,30 +218,35 @@ class AppWindow:
         
     def process_images(self):
         """Process images with selected functions"""
-        input_path = self.input_path.get()
-        output_path = self.output_path.get()
-        
-        if not input_path or not os.path.exists(input_path):
-            messagebox.showerror("Error", "Please select a valid input folder.")
-            return
+        if self.batch_mode:
+            # Run in batch mode
+            self.process_batch()
+        else:
+            # Original single processing mode
+            input_path = self.input_path.get()
+            output_path = self.output_path.get()
             
-        if not output_path:
-            messagebox.showerror("Error", "Please select an output folder.")
-            return
+            if not input_path or not os.path.exists(input_path):
+                messagebox.showerror("Error", "Please select a valid input folder.")
+                return
+                
+            if not output_path:
+                messagebox.showerror("Error", "Please select an output folder.")
+                return
+                
+            # Disable the process button during processing
+            self.process_button.configure(state=tk.DISABLED)
             
-        # Disable the process button during processing
-        self.process_button.configure(state=tk.DISABLED)
-        
-        # Set both thresholds in the AltitudeMap object
-        self.altitude_map.set_altitude_thresholds(self.altitude_threshold, self.low_altitude_threshold)
-        
-        # Start a thread for processing
-        thread = threading.Thread(
-            target=self.analyze_images,
-            args=(input_path, output_path)
-        )
-        thread.daemon = True
-        thread.start()
+            # Set both thresholds in the AltitudeMap object
+            self.altitude_map.set_altitude_thresholds(self.altitude_threshold, self.low_altitude_threshold)
+            
+            # Start a thread for processing
+            thread = threading.Thread(
+                target=self.analyze_images,
+                args=(input_path, output_path)
+            )
+            thread.daemon = True
+            thread.start()
 
     def analyze_images(self, input_folder, output_folder):
         """Process images based on selected functions"""
@@ -733,6 +742,14 @@ class AppWindow:
         self.output_entry.grid(row=0, column=1, padx=5, sticky='ew')
         self.output_button = ttk.Button(output_frame, text="Browse...", command=self.select_output_folder)
         self.output_button.grid(row=0, column=2)
+        
+        # Add batch mode toggle button
+        self.batch_button = ttk.Button(
+            self.input_frame,
+            text="Switch to Batch Mode",
+            command=self.toggle_batch_mode
+        )
+        self.batch_button.grid(row=2, column=0, columnspan=3, pady=(10, 0))
 
     def create_functions_section(self):
         """Create the functions selection checkbox widgets"""
@@ -1232,3 +1249,268 @@ The visibility categories represent:
             import traceback
             self.log_message(traceback.format_exc())
             return False
+
+    def toggle_batch_mode(self):
+        """Toggle between single processing and batch processing modes"""
+        self.batch_mode = not self.batch_mode
+        
+        if self.batch_mode:
+            # Switch to batch mode
+            self.batch_button.configure(text="Switch to Single Mode")
+            self.show_batch_ui()
+        else:
+            # Switch back to single mode
+            self.batch_button.configure(text="Switch to Batch Mode")
+            self.hide_batch_ui()
+
+    def show_batch_ui(self):
+        """Show batch processing interface"""
+        # Hide standard input/output rows but keep the grid structure intact
+        if hasattr(self, 'input_entry'):
+            self.input_entry.grid_remove()
+            self.input_button.grid_remove()
+        
+        if hasattr(self, 'output_entry'):
+            self.output_entry.grid_remove()
+            self.output_button.grid_remove()
+        
+        # Create batch processing frame if it doesn't exist
+        if not hasattr(self, 'batch_frame'):
+            self.batch_frame = ttk.LabelFrame(self.input_frame, text="Batch Processing")
+            
+            # CSV file selection
+            csv_frame = ttk.Frame(self.batch_frame)
+            csv_frame.pack(fill=tk.X, padx=10, pady=10)
+            
+            ttk.Label(csv_frame, text="Batch CSV File:").grid(row=0, column=0, sticky='w')
+            self.batch_csv_entry = ttk.Entry(csv_frame, textvariable=self.batch_csv_path)
+            self.batch_csv_entry.grid(row=0, column=1, padx=5, sticky='ew')
+            self.batch_browse_button = ttk.Button(csv_frame, text="Browse...", command=self.select_batch_csv)
+            self.batch_browse_button.grid(row=0, column=2)
+            csv_frame.columnconfigure(1, weight=1)
+            
+            # Template button
+            template_frame = ttk.Frame(self.batch_frame)
+            template_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+            
+            self.save_template_button = ttk.Button(
+                template_frame,
+                text="Save Example Template CSV",
+                command=self.save_csv_template
+            )
+            self.save_template_button.pack(anchor='w')
+            
+            # Instructions
+            instructions_frame = ttk.LabelFrame(self.batch_frame, text="Batch Processing Instructions")
+            instructions_frame.pack(fill=tk.X, padx=10, pady=5)
+            
+            instructions_text = """
+1. Create a CSV with these columns: Input_Path, Output_Path, Nav_File_Path (optional)
+2. Each row represents one processing job
+3. Use the checkboxes to select functions to run on all entries
+4. Click 'Process Images' to process all entries in the CSV
+            """
+            ttk.Label(instructions_frame, text=instructions_text, justify=tk.LEFT).pack(padx=10, pady=5, anchor='w')
+        
+        # Show batch frame in the right position - important part!
+        # Replace the grid method with the proper placement in your UI
+        self.batch_frame.grid(row=3, column=0, columnspan=3, sticky='ew', pady=5)
+        
+        # Update process button text
+        self.process_button.configure(text="Process All Batches")
+
+    def hide_batch_ui(self):
+        """Hide batch processing interface and show standard UI"""
+        # Hide batch frame
+        if hasattr(self, 'batch_frame'):
+            self.batch_frame.grid_remove()
+        
+        # Show standard input/output fields
+        if hasattr(self, 'input_entry'):
+            self.input_entry.grid()
+            self.input_button.grid()
+        
+        if hasattr(self, 'output_entry'):
+            self.output_entry.grid()
+            self.output_button.grid()
+        
+        # Reset process button text
+        self.process_button.configure(text="Process Images")
+
+    def select_batch_csv(self):
+        """Browse for batch CSV file"""
+        file_path = filedialog.askopenfilename(
+            title="Select Batch CSV File",
+            filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")]
+        )
+        if file_path:
+            self.batch_csv_path.set(file_path)
+            self.log_message(f"Batch CSV file set to: {file_path}")
+
+    def save_csv_template(self):
+        """Save an example CSV template file"""
+        file_path = filedialog.asksaveasfilename(
+            title="Save Example CSV Template",
+            defaultextension=".csv",
+            filetypes=[("CSV Files", "*.csv")]
+        )
+        if file_path:
+            try:
+                with open(file_path, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(['Input_Path', 'Output_Path', 'Nav_File_Path'])
+                    
+                    # Add example rows (with placeholder paths)
+                    example_paths = [
+                        ["D:\\Data\\DIVE001", "D:\\Results\\DIVE001_Imagery_Outputs", "D:\\Data\\DIVE001\\Vehicle_Data\\DIVE001_Nav.txt"],
+                        ["D:\\Data\\DIVE002", "D:\\Results\\DIVE002_Imagery_Outputs", "D:\\Data\\DIVE002\\Vehicle_Data\\DIVE002_Nav.txt"]
+                    ]
+                    writer.writerows(example_paths)
+                
+                self.log_message(f"Example batch CSV template saved to: {file_path}")
+                
+                # Automatically set the path
+                self.batch_csv_path.set(file_path)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save template: {str(e)}")
+
+    def process_batch(self):
+        """Process all entries in the batch CSV file"""
+        batch_csv = self.batch_csv_path.get()
+        
+        if not batch_csv or not os.path.exists(batch_csv):
+            messagebox.showerror("Error", "Please select a valid batch CSV file.")
+            return
+        
+        try:
+            # Read the CSV file
+            df = pd.read_csv(batch_csv)
+            
+            # Check required columns
+            required_columns = ['Input_Path', 'Output_Path']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                messagebox.showerror(
+                    "Invalid CSV Format",
+                    f"The CSV is missing required column(s): {', '.join(missing_columns)}\n\n"
+                    f"Required columns are: {', '.join(required_columns)}"
+                )
+                return
+            
+            # Check if all input paths exist
+            missing_inputs = [path for path in df['Input_Path'] if not os.path.exists(path)]
+            if missing_inputs:
+                msg = "The following input paths do not exist:\n\n"
+                for path in missing_inputs[:5]:  # Show first 5 to avoid excessive message
+                    msg += f"- {path}\n"
+                
+                if len(missing_inputs) > 5:
+                    msg += f"\nand {len(missing_inputs) - 5} more..."
+                    
+                if not messagebox.askyesno("Missing Input Folders", msg + "\n\nDo you want to continue anyway?"):
+                    return
+            
+            # Prepare output directories
+            for output_path in df['Output_Path']:
+                os.makedirs(output_path, exist_ok=True)
+            
+            # Disable the process button during processing
+            self.process_button.configure(state=tk.DISABLED)
+            
+            # Set both thresholds in the AltitudeMap object
+            self.altitude_map.set_altitude_thresholds(self.altitude_threshold, self.low_altitude_threshold)
+            
+            # Start batch processing in a thread
+            thread = threading.Thread(
+                target=self.run_batch_processing,
+                args=(df,)
+            )
+            thread.daemon = True
+            thread.start()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to process batch CSV: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+
+    def run_batch_processing(self, df):
+        """Run processing for all rows in the dataframe"""
+        try:
+            total_rows = len(df)
+            self.log_message(f"Starting batch processing of {total_rows} folders...")
+            
+            for index, row in df.iterrows():
+                input_path = row['Input_Path']
+                output_path = row['Output_Path']
+                
+                # Get nav file if it exists in the CSV
+                nav_file = None
+                if 'Nav_File_Path' in row and not pd.isna(row['Nav_File_Path']):
+                    nav_file = row['Nav_File_Path']
+                    if os.path.exists(nav_file):
+                        self.nav_path.set(nav_file)
+                    else:
+                        self.log_message(f"Warning: Navigation file not found: {nav_file}")
+                        self.nav_path.set("")
+                else:
+                    self.nav_path.set("")
+                
+                # Log start of current batch
+                self.log_message(f"\n{'=' * 40}")
+                self.log_message(f"Processing batch {index+1}/{total_rows}")
+                self.log_message(f"Input: {input_path}")
+                self.log_message(f"Output: {output_path}")
+                if nav_file:
+                    self.log_message(f"Nav file: {nav_file}")
+                
+                # Process this batch
+                try:
+                    # Reset any residual state between runs
+                    self.reset_analysis_state()
+                    
+                    # Run the analysis for this batch
+                    self.analyze_images(input_path, output_path)
+                    self.log_message(f"Completed batch {index+1}/{total_rows}")
+                except Exception as e:
+                    self.log_message(f"Error in batch {index+1}: {str(e)}")
+                    import traceback
+                    self.log_message(traceback.format_exc())
+            
+            # Re-enable the process button
+            self.master.after(0, lambda: self.process_button.configure(state=tk.NORMAL))
+            self.log_message("\nAll batch processing completed.")
+            
+        except Exception as e:
+            self.log_message(f"Fatal error in batch processing: {str(e)}")
+            import traceback
+            self.log_message(traceback.format_exc())
+            # Re-enable the process button
+            self.master.after(0, lambda: self.process_button.configure(state=tk.NORMAL))
+
+    def reset_analysis_state(self):
+        """Reset analysis state between batch runs to prevent cross-contamination"""
+        # Reset metrics state
+        if hasattr(self, 'metrics'):
+            self.metrics.gps_data = []
+            if hasattr(self.metrics, 'vertical_overlap_stats'):
+                self.metrics.vertical_overlap_stats = None
+            if hasattr(self.metrics, 'horizontal_overlap_stats'):
+                self.metrics.horizontal_overlap_stats = None
+            if hasattr(self.metrics, 'overall_overlap_stats'):
+                self.metrics.overall_overlap_stats = None
+        
+        # Reset footprint map state
+        if hasattr(self, 'footprint_map'):
+            if hasattr(self.footprint_map, 'vertical_overlap_stats'):
+                self.footprint_map.vertical_overlap_stats = None
+            if hasattr(self.footprint_map, 'horizontal_overlap_stats'):
+                self.footprint_map.horizontal_overlap_stats = None
+            if hasattr(self.footprint_map, 'overall_overlap_stats'):
+                self.footprint_map.overall_overlap_stats = None
+        
+        # Reset visibility analyzer state
+        if hasattr(self, 'visibility_analyzer'):
+            if hasattr(self.visibility_analyzer, 'visibility_stats'):
+                self.visibility_analyzer.visibility_stats = None
+
