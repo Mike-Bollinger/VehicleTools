@@ -88,6 +88,91 @@ class AppWindow:
         # Make sure the navigation file selection is visible if footprint map is checked by default
         self.update_nav_file_visibility()
 
+    def create_frames(self):
+        """Create the main frames for the application with scrolling support"""
+        # Set width for left frame with increased width
+        LEFT_FRAME_WIDTH = 550  # Increased from 500 to 550
+        
+        # Create main container frames
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create a frame that contains the canvas and scrollbar
+        canvas_container = ttk.Frame(main_frame)
+        canvas_container.pack(side=tk.LEFT, fill=tk.BOTH)
+        
+        # Create Canvas with scrollbar
+        self.left_canvas = tk.Canvas(canvas_container, width=LEFT_FRAME_WIDTH, borderwidth=0)
+        left_scrollbar = ttk.Scrollbar(canvas_container, orient=tk.VERTICAL, command=self.left_canvas.yview)
+        
+        # Pack canvas and scrollbar
+        self.left_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        left_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Configure canvas
+        self.left_canvas.configure(yscrollcommand=left_scrollbar.set)
+        
+        # Create the main frame inside the canvas
+        self.left_frame = ttk.Frame(self.left_canvas, width=LEFT_FRAME_WIDTH)
+        
+        # Create window in canvas that contains the frame
+        self.left_canvas_window = self.left_canvas.create_window(
+            (0, 0),  # Coordinates
+            window=self.left_frame,
+            anchor="nw",
+            width=LEFT_FRAME_WIDTH  # Important: ensure the frame has a fixed width
+        )
+        
+        # Configure bindings to handle resizing
+        self.left_frame.bind("<Configure>", self._on_frame_configure)
+        self.left_canvas.bind("<Configure>", self._on_canvas_configure)
+        
+        # Allow mousewheel scrolling
+        self.left_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        
+        # Right frame for log output and progress (no scroll needed)
+        self.right_frame = ttk.Frame(main_frame, padding="5")
+        self.right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # Create log frame inside the right frame
+        self.log_frame = ttk.Frame(self.right_frame)
+        self.log_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create sub-frames in left frame with additional padding
+        self.input_frame = ttk.LabelFrame(self.left_frame, text="Input/Output", padding="10")  # Increased from 5 to 10
+        self.input_frame.pack(fill=tk.X, pady=(5, 10), padx=10)  # Added padx=10
+        
+        self.functions_frame = ttk.LabelFrame(self.left_frame, text="Analysis Functions", padding="10")  # Increased from 5 to 10
+        self.functions_frame.pack(fill=tk.X, pady=(0, 10), padx=10)  # Added padx=10
+
+    def _on_frame_configure(self, event=None):
+        """Reset the scroll region to encompass the inner frame"""
+        self.left_canvas.configure(scrollregion=self.left_canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event=None):
+        """Update the width of the window to fit the canvas"""
+        # Update the width to fill the canvas
+        canvas_width = event.width
+        self.left_canvas.itemconfig(self.left_canvas_window, width=canvas_width)
+
+    def _on_mousewheel(self, event):
+        """Handle mousewheel scrolling"""
+        # Get the pointer position relative to the screen
+        x_screen, y_screen = self.root.winfo_pointerxy()
+        
+        # Find the widget under the pointer
+        widget_under_pointer = self.root.winfo_containing(x_screen, y_screen)
+        
+        # Only scroll if mouse is over the canvas or its children
+        if widget_under_pointer and (widget_under_pointer == self.left_canvas or 
+                                    self.left_canvas.winfo_ismapped() and
+                                    widget_under_pointer.winfo_toplevel() == self.root):
+            # Platform specific scrolling (direction and speed)
+            if event.delta > 0:
+                self.left_canvas.yview_scroll(-1, "units")
+            else:
+                self.left_canvas.yview_scroll(1, "units")
+
     def toggle_all_functions(self):
         """Toggle all function checkboxes based on 'All Functions' checkbox"""
         state = self.all_var.get()
@@ -188,6 +273,19 @@ class AppWindow:
         else:
             self.nav_file_frame.grid_remove()
         
+        self.update_all_checkbox()
+
+    def toggle_visibility_options(self):
+        """Show or hide visibility model options based on checkbox state"""
+        if self.visibility_analyzer_var.get():
+            # Position it below the note, but before highlight selector checkbox
+            self.visibility_model_frame.grid(row=self.visibility_model_row, column=0, 
+                                             columnspan=3, sticky='ew', padx=45, pady=(0, 5))
+        else:
+            # Hide the options when unchecked
+            self.visibility_model_frame.grid_remove()
+        
+        # Update the "All" checkbox state
         self.update_all_checkbox()
 
     def log_message(self, message):
@@ -692,33 +790,6 @@ class AppWindow:
         except Exception as e:
             print(f"Error updating threshold: {e}")
 
-    def create_frames(self):
-        """Create the main frames for the application"""
-        # Main container frame
-        self.main_frame = ttk.Frame(self.root, padding="10")
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Left frame for options
-        self.left_frame = ttk.Frame(self.main_frame, padding="5")
-        self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, padx=(0, 5))
-        
-        # Right frame for log output and progress
-        self.right_frame = ttk.Frame(self.main_frame, padding="5")
-        self.right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        
-        # Create sub-frames in left frame
-        self.input_frame = ttk.LabelFrame(self.left_frame, text="Input/Output", padding="5")
-        self.input_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        self.functions_frame = ttk.LabelFrame(self.left_frame, text="Analysis Functions", padding="5")
-        self.functions_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # Removed action_frame - process button will be added later
-        
-        # Create log frame in right frame
-        self.log_frame = ttk.LabelFrame(self.right_frame, text="Processing Log", padding="5")
-        self.log_frame.pack(fill=tk.BOTH, expand=True)
-
     def create_input_section(self):
         """Create the input/output file selection widgets"""
         # Input folder selection
@@ -918,8 +989,8 @@ class AppWindow:
         
         # Create a separate LabelFrame for the altitude threshold - CLEARLY SEPARATED FROM FUNCTIONS
         # Create threshold frame after functions frame
-        self.threshold_frame = ttk.LabelFrame(self.left_frame, text="Altitude Threshold")
-        self.threshold_frame.pack(fill=tk.X, pady=(10, 10))
+        self.threshold_frame = ttk.LabelFrame(self.left_frame, text="Altitude Threshold", padding="10")
+        self.threshold_frame.pack(fill=tk.X, pady=(10, 10), padx=10)  # Added padx=10
         
         # Create a frame inside the LabelFrame for better layout
         threshold_content = ttk.Frame(self.threshold_frame)
@@ -944,7 +1015,7 @@ class AppWindow:
         
         # Add process button as the last element in the left frame (below everything else)
         process_button_frame = ttk.Frame(self.left_frame)
-        process_button_frame.pack(fill=tk.X, pady=(10, 0))
+        process_button_frame.pack(fill=tk.X, pady=(10, 0), padx=10)  # Added padx=10
         
         self.process_button = ttk.Button(
             process_button_frame,
@@ -962,58 +1033,9 @@ class AppWindow:
         if self.footprint_map_var.get():
             self.update_nav_file_visibility()
 
-    def toggle_visibility_options(self):
-        """Show or hide visibility analysis options based on checkbox state"""
-        if self.visibility_analyzer_var.get():
-            # Show the model frame - position it right after the visibility checkbox
-            self.visibility_model_frame.grid_remove()  # Remove first to make sure it's properly positioned
-            self.visibility_model_frame.grid(row=self.vis_note_label.grid_info()['row'] + 1, 
-                                           column=0, sticky='ew', padx=25, pady=(0, 5))
-            
-            # Set default path in the model entry field instead of showing a dialog
-            if not hasattr(self, 'model_path_initialized') or not self.model_path_initialized:
-                self.model_path_initialized = True  # Mark as initialized
-                
-                if not self.model_path.get() and not self.training_path.get():
-                    # Get the default models directory
-                    default_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                                           "v_a_pre-trained_models")
-                    
-                    # Look for existing .h5 files in that directory
-                    if os.path.exists(default_dir):
-                        model_files = [f for f in os.listdir(default_dir) if f.endswith('.h5')]
-                        if model_files:
-                            # Use the most recent model file based on filename (assuming timestamp in name)
-                            model_files.sort(reverse=True)  # Sort in descending order
-                            default_model = os.path.join(default_dir, model_files[0])
-                            self.model_path.set(default_model)
-                            # Only log if log_text exists
-                            if hasattr(self, 'log_text'):
-                                self.log_message(f"Default visibility model: {default_model}")
-                        else:
-                            # No model files found, just set the directory
-                            self.model_path.set(default_dir)
-                            if hasattr(self, 'log_text'):
-                                self.log_message(f"No model files found in default directory. Please select a model.")
-                    else:
-                        # Default directory doesn't exist, create it and set the path
-                        os.makedirs(default_dir, exist_ok=True)
-                        self.model_path.set(default_dir)
-                        if hasattr(self, 'log_text'):
-                            self.log_message(f"Please select a visibility model file.")
-                    
-                    # Make sure model radio is selected by default
-                    self.model_type_var.set("model")
-                    self.on_model_radio_select()
-        else:
-            # Hide the model frame
-            self.visibility_model_frame.grid_remove()
-        
-        self.update_all_checkbox()
-
     def create_log_section(self):
         """Create the log output and progress widgets"""
-        # Create log text widget
+        # Create log text widget within the log frame
         self.log_text = scrolledtext.ScrolledText(self.log_frame, height=20, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.log_text.config(state=tk.DISABLED)  # Make read-only
@@ -1267,6 +1289,11 @@ The visibility categories represent:
         """Show batch processing interface"""
         # Hide standard input/output rows but keep the grid structure intact
         if hasattr(self, 'input_entry'):
+            # Store current values before hiding
+            self.stored_input_path = self.input_path.get()
+            self.stored_output_path = self.output_path.get()
+            
+            # Hide the elements
             self.input_entry.grid_remove()
             self.input_button.grid_remove()
         
@@ -1312,12 +1339,13 @@ The visibility categories represent:
             """
             ttk.Label(instructions_frame, text=instructions_text, justify=tk.LEFT).pack(padx=10, pady=5, anchor='w')
         
-        # Show batch frame in the right position - important part!
-        # Replace the grid method with the proper placement in your UI
+        # Show batch frame in the right position
         self.batch_frame.grid(row=3, column=0, columnspan=3, sticky='ew', pady=5)
         
         # Update process button text
         self.process_button.configure(text="Process All Batches")
+        
+        # Note: We keep the visibility model entries intact to preserve their values
 
     def hide_batch_ui(self):
         """Hide batch processing interface and show standard UI"""
@@ -1327,6 +1355,13 @@ The visibility categories represent:
         
         # Show standard input/output fields
         if hasattr(self, 'input_entry'):
+            # Restore saved values if they exist
+            if hasattr(self, 'stored_input_path'):
+                self.input_path.set(self.stored_input_path)
+            if hasattr(self, 'stored_output_path'):
+                self.output_path.set(self.stored_output_path)
+                
+            # Make elements visible again
             self.input_entry.grid()
             self.input_button.grid()
         
@@ -1513,4 +1548,5 @@ The visibility categories represent:
         if hasattr(self, 'visibility_analyzer'):
             if hasattr(self.visibility_analyzer, 'visibility_stats'):
                 self.visibility_analyzer.visibility_stats = None
+
 
