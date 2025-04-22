@@ -37,6 +37,9 @@ class HighlightPanelCreator:
         self.root.title("Highlight Panel Creator")
         self.root.geometry("1000x800")
         
+        # Set up window close protocol
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        
         self.setup_variables()
         self.create_widgets()
         self.layout_widgets()
@@ -48,7 +51,7 @@ class HighlightPanelCreator:
         self.panel_layout = tk.IntVar(value=4)  # Default to 4 images (2x2 grid)
         self.output_folder = os.path.expanduser("~\\Documents")
         self.preview_figure = None
-        self.preview_canvas = None
+        self.preview_canvas_plot = None
     
     def create_widgets(self):
         """Create the GUI widgets"""
@@ -81,8 +84,16 @@ class HighlightPanelCreator:
         # Preview frame
         self.preview_frame = ttk.LabelFrame(self.main_frame, text="Preview", padding="5")
         
-        # Create a frame that will contain the matplotlib canvas
-        self.figure_frame = ttk.Frame(self.preview_frame)
+        # Create a canvas with scrollbar for the preview
+        self.preview_canvas = tk.Canvas(self.preview_frame)
+        self.preview_scrollbar = ttk.Scrollbar(self.preview_frame, orient=tk.VERTICAL, command=self.preview_canvas.yview)
+        self.preview_canvas.configure(yscrollcommand=self.preview_scrollbar.set)
+        
+        # Create a frame inside the canvas that will contain the matplotlib figure
+        self.figure_frame = ttk.Frame(self.preview_canvas)
+        
+        # Create a window inside the canvas that contains the figure_frame
+        self.preview_canvas_window = self.preview_canvas.create_window((0, 0), window=self.figure_frame, anchor="nw")
         
         # Actions frame
         self.actions_frame = ttk.Frame(self.main_frame)
@@ -118,9 +129,10 @@ class HighlightPanelCreator:
         self.remove_button.pack(side=tk.LEFT, padx=5, pady=5)
         self.clear_button.pack(side=tk.LEFT, padx=5, pady=5)
         
-        # Preview Frame
+        # Preview Frame with scrollable canvas
         self.preview_frame.grid(column=0, row=2, sticky=(tk.N, tk.W, tk.E, tk.S), padx=5, pady=5)
-        self.figure_frame.pack(fill=tk.BOTH, expand=True)
+        self.preview_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.preview_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Actions frame
         self.actions_frame.grid(column=0, row=3, sticky=(tk.W, tk.E), padx=5, pady=5)
@@ -136,15 +148,24 @@ class HighlightPanelCreator:
         self.main_frame.rowconfigure(2, weight=1)  # Make preview expandable
         self.images_frame.columnconfigure(0, weight=1)
         self.images_frame.rowconfigure(0, weight=1)
+        
+        # Bind canvas configure event to update the figure_frame's scroll region
+        self.figure_frame.bind("<Configure>", self.on_frame_configure)
+        self.preview_canvas.bind("<Configure>", self.on_canvas_configure)
     
     def bind_events(self):
         """Bind events to widgets"""
         self.panel_layout.trace_add("write", self.update_preview)
         self.images_listbox.bind("<Delete>", lambda e: self.remove_images())
         
-        # Set up drag and drop
-        self.images_listbox.drop_target_register("DND_Files")
-        self.images_listbox.dnd_bind("<<Drop>>", self.handle_drop)
+        # Set up drag and drop if available
+        try:
+            # Check if the methods exist before using them
+            if hasattr(self.images_listbox, 'drop_target_register') and callable(self.images_listbox.drop_target_register):
+                self.images_listbox.drop_target_register("DND_Files")
+                self.images_listbox.dnd_bind("<<Drop>>", self.handle_drop)
+        except Exception as e:
+            print(f"Could not enable drag and drop: {e}")
     
     def handle_drop(self, event):
         """Handle drag and drop of files"""
@@ -353,6 +374,12 @@ class HighlightPanelCreator:
         for widget in self.figure_frame.winfo_children():
             widget.destroy()
         
+        # Clear any existing matplotlib figures to prevent memory leaks
+        if self.preview_figure:
+            plt.close(self.preview_figure)
+            self.preview_figure = None
+            self.preview_canvas_plot = None
+        
         if not self.selected_images:
             self.status_var.set("No images selected for preview")
             return
@@ -360,27 +387,47 @@ class HighlightPanelCreator:
         # Get the number of images to display based on layout
         layout = self.panel_layout.get()
         
-        # Determine the grid configuration
-        if layout == 2:
-            rows, cols = 1, 2
-        elif layout == 4:
-            rows, cols = 2, 2
-        elif layout == 6:
-            rows, cols = 2, 3
+        # Always use 2 columns, calculate rows based on image count
+        cols = 2
+        
+        # Calculate the number of images to display (limited by the layout choice)
+        num_images = min(len(self.selected_images), layout)
+        
+        # Calculate number of rows needed (always round up)
+        rows = (num_images + cols - 1) // cols  # Integer division with ceiling
         
         try:
-            # Create figure with proper aspect ratio
-            fig = plt.figure(figsize=(10, 8 if rows == 2 else 4))
+            # Fixed width of 6.5 inches for report integration
+            fig_width = 6.5
             
-            # Use tight layout and reduce spacing between subplots
-            gs = gridspec.GridSpec(rows, cols, figure=fig, hspace=0.1, wspace=0.1)
+            # Load first image to determine aspect ratio
+            sample_img = plt.imread(self.selected_images[0])
+            aspect_ratio = sample_img.shape[0] / sample_img.shape[1]  # height / width
+            
+            # Calculate height per subplot, accounting for the aspect ratio
+            # We want each image to maintain its aspect ratio when displayed
+            subplot_width = fig_width / cols * 1  # Use more of the available width (100%)
+            subplot_height = subplot_width * aspect_ratio
+            
+            # Add spacing for titles and text
+            title_space = 1.0  # Adjusted from 1.1 to 1.0 (halfway between previous values)
+            
+            # Calculate total figure height
+            fig_height = (subplot_height + title_space) * rows
+            
+            # Create figure with proper aspect ratio for portrait orientation
+            plt.rcdefaults()  # Reset any rcParams to ensure consistent behavior
+            fig = plt.figure(figsize=(fig_width, fig_height), constrained_layout=False)
+            
+            # Use vertical spacing halfway between previous values (0.03 and 0.15)
+            gs = gridspec.GridSpec(rows, cols, figure=fig, hspace=0.09, wspace=0.001)  # Adjusted hspace to 0.09
             
             # Add each image to the grid
             for i, img_path in enumerate(self.selected_images):
-                if i >= layout:
+                if i >= num_images:
                     break
                     
-                # Calculate grid position
+                # Calculate grid position - always filling row by row
                 row_idx = i // cols
                 col_idx = i % cols
                 
@@ -395,7 +442,7 @@ class HighlightPanelCreator:
                     # Use only filename without extension as title
                     filename = os.path.basename(img_path)
                     title = f"{os.path.splitext(filename)[0]}"
-                    ax.set_title(title, fontsize=8, pad=2)  # Reduced padding
+                    ax.set_title(title, fontsize=8, pad=6)  # Adjusted pad from 8 to 6 (halfway between previous values)
                     
                     # Get GPS data from image
                     gps_data = self.extract_gps_data(img_path)
@@ -408,14 +455,15 @@ class HighlightPanelCreator:
                             text += f"\nAlt: {gps_data['altitude']:.2f}m"
                             
                         # Add text at bottom of the image
-                        ax.text(0.03, 0.03, text,
+                        # Use white background with black text - match highlight_selector style
+                        ax.text(0.02, 0.03, text,
                                 transform=ax.transAxes,
                                 fontsize=7,
-                                color='white',
+                                color='black',
                                 horizontalalignment='left',
                                 verticalalignment='bottom', 
-                                bbox=dict(boxstyle='round,pad=0.3', 
-                                          facecolor='black', 
+                                bbox=dict(boxstyle='round,pad=0.2',
+                                          facecolor='white', 
                                           alpha=0.7))
                         
                 except Exception as e:
@@ -426,6 +474,17 @@ class HighlightPanelCreator:
                 # Turn off axis labels
                 ax.set_xticks([])
                 ax.set_yticks([])
+                
+                # Remove axis borders/spines for cleaner look
+                for spine in ax.spines.values():
+                    spine.set_visible(False)
+            
+            # Maximize image space by adjusting the subplot parameters
+            # Explicitly set these parameters to override any default behavior
+            plt.subplots_adjust(left=0.005, right=0.995, top=0.97, bottom=0.005, wspace=0.001, hspace=0.09)
+            
+            # Disable automatic layout adjustments that might override our settings
+            fig.set_tight_layout(False)
             
             # Create the canvas and add it to the frame
             canvas = FigureCanvasTkAgg(fig, master=self.figure_frame)
@@ -434,7 +493,11 @@ class HighlightPanelCreator:
             
             # Save references to figure and canvas
             self.preview_figure = fig
-            self.preview_canvas = canvas
+            self.preview_canvas_plot = canvas
+            
+            # Update the scroll region after adding the figure
+            self.figure_frame.update_idletasks()
+            self.preview_canvas.configure(scrollregion=self.preview_canvas.bbox("all"))
             
             self.status_var.set("Preview updated")
             
@@ -480,39 +543,24 @@ class HighlightPanelCreator:
         except Exception as e:
             self.status_var.set(f"Error saving panel: {str(e)}")
             traceback.print_exc()
-
-# Initialize drag and drop for the Tkinter interface
-def add_drag_and_drop_support(tk):
-    """Add drag and drop support for Tkinter"""
-    # Define drag and drop functionality based on OS
-    import sys
-    if sys.platform == 'win32':
-        # For Windows, use TkDND
-        try:
-            # Try to import and initialize TkDND
-            from tkinterdnd2 import TkinterDnD, DND_FILES
-            
-            # Initialize for the tkinter module
-            if not hasattr(tk, 'drop_target_register'):
-                TkinterDnD.DnDWrapper.attach_tkinter_dnd(tk)
-                
-        except ImportError:
-            print("TkinterDnD2 not installed. Drag and drop will be disabled.")
-            
-            # Create dummy methods
-            def dummy(*args, **kwargs):
-                pass
-            
-            tk.Listbox.drop_target_register = dummy
-            tk.Listbox.dnd_bind = dummy
-    else:
-        # For other platforms, add dummy methods for now
-        # Can be extended with platform-specific implementations
-        def dummy(*args, **kwargs):
-            pass
+    
+    def on_frame_configure(self, event):
+        """Update the scroll region to encompass the contents of the frame"""
+        self.preview_canvas.configure(scrollregion=self.preview_canvas.bbox("all"))
         
-        tk.Listbox.drop_target_register = dummy
-        tk.Listbox.dnd_bind = dummy
+    def on_canvas_configure(self, event):
+        """Update the figure_frame's width to fill the canvas"""
+        canvas_width = event.width
+        self.preview_canvas.itemconfig(self.preview_canvas_window, width=canvas_width)
+        
+    def on_close(self):
+        """Handle window close event properly"""
+        # Clean up matplotlib resources if they exist
+        if self.preview_figure:
+            plt.close(self.preview_figure)
+        
+        # Destroy the root window
+        self.root.destroy()
 
 def main():
     # Set up exception handling
@@ -523,12 +571,22 @@ def main():
     # Set the exception handler
     sys.excepthook = handle_exception
     
-    # Create the main window
-    root = tk.Tk()
-    
     try:
-        # Add drag and drop support
-        add_drag_and_drop_support(tk)
+        # Try to use TkinterDnD for drag and drop support
+        try:
+            from tkinterdnd2 import TkinterDnD
+            root = TkinterDnD.Tk()
+        except ImportError:
+            # Fall back to standard Tk
+            print("TkinterDnD2 not installed. Drag and drop will be disabled.")
+            root = tk.Tk()
+            
+            # Add dummy methods to handle drag and drop calls gracefully
+            def dummy(*args, **kwargs):
+                pass
+            
+            tk.Listbox.drop_target_register = dummy
+            tk.Listbox.dnd_bind = dummy
         
         # Create the application
         app = HighlightPanelCreator(root)
