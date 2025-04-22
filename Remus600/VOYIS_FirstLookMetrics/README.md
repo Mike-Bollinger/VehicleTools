@@ -1,7 +1,7 @@
 # VOYIS First Look Metrics
 
-**Version:** 1.3.0  
-**Last Updated:** June 2025  
+**Version:** 1.4.0  
+**Last Updated:** April 2025  
 **Author:** Mike Bollinger  
 
 ## Overview
@@ -31,11 +31,24 @@ The VOYIS First Look Metrics application is designed to calculate summary statis
   - Shapefile export with visibility information for GIS integration
   - Visualization of randomly selected sample locations
   
+- **Highlight Selection**
+  - Automatic selection of highlight images based on quality metrics 
+  - Identification of representative imagery across survey area
+  - HTML gallery of selected highlights with metadata
+  
+- **Highlight Panel Creator**
+  - Creation of multi-image highlight panels for reports
+  - Support for 2, 4, or 6 images in a publication-ready format
+  - Automatic extraction of GPS metadata from images
+  - Configurable 2-column layout optimized for portrait style reports
+  - Drag-and-drop interface for easy image management
+  
 - **Export Capabilities**
   - Comprehensive summary report in text format
   - CSV export of image metadata with overlap statistics
   - Shapefile export for GIS integration including overlap metrics
   - Visualization plots showing coverage and overlap
+  - High resolution image panels for inclusion in reports
 
 - **User Interface**
   - Intuitive GUI for input/output folder selection
@@ -45,27 +58,25 @@ The VOYIS First Look Metrics application is designed to calculate summary statis
 
 ## Project Structure
 ```
-VOYIS_FirstLookMetrics
-├── src
-│   ├── main.py                # Entry point of the application
-│   ├── gui                    # Contains GUI related files
-│   │   ├── __init__.py
-│   │   └── app_window.py      # Defines the GUI window
-│   ├── processors             # Contains image processing logic
-│   │   ├── __init__.py
-│   │   └── image_processor.py  # Image processing functionalities
-│   ├── utils                  # Utility functions for file handling
-│   │   ├── __init__.py
-│   │   └── file_utils.py      # File handling utilities
-│   └── models                 # Data models for metrics
-│       ├── __init__.py
-│       └── metrics.py         # Summary statistics for processed images
-├── tests                      # Contains unit tests
-│   ├── __init__.py
-│   ├── test_image_processor.py # Tests for image processing
-│   └── test_file_utils.py     # Tests for file utilities
-├── requirements.txt           # Project dependencies
-└── README.md                  # Project documentation
+VOYIS_FirstLookMetrics/ 
+├── src/ 
+│ ├── main.py # Entry point of the application 
+│ ├── gui/ 
+│ │ ├── init.py 
+│ │ └── app_window.py # Defines the GUI window 
+│ ├── models/ 
+│ │ ├── init.py 
+│ │ ├── metrics.py # Summary statistics for processed images 
+│ │ ├── altitude_map.py # Creates location maps and altitude visualizations 
+│ │ ├── footprint_map.py # Calculates and visualizes image footprints and overlap 
+│ │ ├── visibility_analyzer.py # ML-based visibility classification 
+│ │ └── highlight_selector.py # Analysis for selecting highlight images 
+│ └── utils/ 
+│ ├── init.py 
+│ ├── path_utils.py # Utilities for path and file management 
+│ └── highlight_panel_creator.py # Creates highlight image panels 
+├── requirements.txt # Project dependencies 
+└── README.md # Project documentation
 ```
 
 ## System Requirements
@@ -75,6 +86,7 @@ VOYIS_FirstLookMetrics
   - rtree for improved spatial query performance
   - TensorFlow for visibility analysis
   - shapely for advanced spatial operations
+  - tkinterdnd2 for drag-and-drop functionality in highlight panel creator
 
 ## Installation
 1. Clone the repository:
@@ -93,6 +105,10 @@ VOYIS_FirstLookMetrics
    ```
    pip install tensorflow
    ```
+5. Optional: Install tkinterdnd2 for drag-and-drop support:
+   ```
+   pip install tkinterdnd2
+   ```
 
 ## Usage
 1. Run the application:
@@ -108,6 +124,11 @@ VOYIS_FirstLookMetrics
    - Choose pre-trained visibility model or training data directory
 3. Click "Process Images" and monitor progress in the status area
 4. Examine the generated reports and visualizations in the output folder
+5. Use the highlight panel creator for creating report-ready image panels:
+   - Launch from the Tools menu
+   - Select 2, 4, or 6 images layout
+   - Add images via the file dialog or drag-and-drop
+   - Save the panel as PNG, JPEG, or PDF
 
 ## Output Files
 The application generates the following outputs:
@@ -124,8 +145,12 @@ The application generates the following outputs:
 - `visibility_results.csv`: CSV file with visibility classifications and confidence scores
 - `selected_images_map.png`: Map showing selected vs. non-selected images for visibility analysis
 - `shapefiles/selected_images.shp`: Shapefile of randomly selected images with visibility data
+- `highlight_images/`: Directory containing selected highlight images
+- `highlight_images/highlights.html`: Interactive HTML gallery of highlight images
+- `highlight_images/top_highlights_panel.png`: Auto-generated panel with top highlight images
 
 ## Version History
+- **1.4.0** - Added highlight panel creator, and highlight image selection tools
 - **1.3.0** - Added ML-based visibility analysis, improved workflow organization, and added shapefile exports
 - **1.2.0** - Added overall overlap analysis and optimized spatial processing
 - **1.1.0** - Added horizontal overlap analysis and GIS exports
@@ -136,6 +161,7 @@ The application generates the following outputs:
 - Requires geopandas for advanced mapping features
 - TensorFlow needed for visibility analysis
 - The visibility analysis may need additional training data for optimal performance in varied environments
+- Highlight panel creator requires tkinterdnd2 for drag-and-drop functionality
 
 ## Contributing
 Contributions are welcome! Please submit a pull request or open an issue for any enhancements or bug fixes.
