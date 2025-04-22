@@ -15,6 +15,8 @@ import numpy as np
 import time
 import pandas as pd
 import csv
+import platform
+import subprocess
 
 class AppWindow:
     def __init__(self, root):
@@ -674,6 +676,9 @@ class AppWindow:
                     self.log_message("Error during highlight image selection")
             
             self.log_message("\nAll selected processing tasks completed successfully.")
+            
+            # Play completion sound
+            self.play_completion_sound()
             
         except Exception as e:
             self.log_message(f"Error during processing: {str(e)}")
@@ -1548,5 +1553,102 @@ The visibility categories represent:
         if hasattr(self, 'visibility_analyzer'):
             if hasattr(self.visibility_analyzer, 'visibility_stats'):
                 self.visibility_analyzer.visibility_stats = None
+
+    def play_completion_sound(self):
+        """Play a sound when processing is complete"""
+        try:
+            # Check which OS we're running on
+            system = platform.system()
+            
+            # Sound file path - look for MP3 first
+            mp3_sound_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
+                                    "utils", "sounds", "beer_open.mp3")
+            wav_sound_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
+                                    "utils", "sounds", "beer_open.wav")
+            
+            # Create the sounds directory if it doesn't exist
+            os.makedirs(os.path.dirname(mp3_sound_file), exist_ok=True)
+            
+            # Play the sound based on the platform
+            if system == "Windows":
+                try:
+                    import winsound
+                    
+                    # For MP3 on Windows, we need to use a different approach
+                    if os.path.exists(mp3_sound_file):
+                        # Use playsound library if available
+                        try:
+                            from playsound import playsound
+                            playsound(mp3_sound_file)
+                            self.log_message("Processing complete!")
+                            return
+                        except ImportError:
+                            # Fall back to Windows Media Player if playsound isn't available
+                            try:
+                                os.startfile(mp3_sound_file)
+                                self.log_message("Processing complete!")
+                                return
+                            except:
+                                pass  # Fall through to WAV approach
+                    
+                    # Try WAV file next
+                    if os.path.exists(wav_sound_file):
+                        winsound.PlaySound(wav_sound_file, winsound.SND_FILENAME)
+                        self.log_message("Processing complete!")
+                    else:
+                        # Use a more interesting system sound
+                        winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
+                        self.log_message("Processing complete!")
+                except Exception as e:
+                    print(f"Could not play sound: {str(e)}")
+                    
+            elif system == "Darwin":  # macOS
+                if os.path.exists(mp3_sound_file):
+                    subprocess.call(["afplay", mp3_sound_file])
+                    self.log_message("Processing complete!")
+                elif os.path.exists(wav_sound_file):
+                    subprocess.call(["afplay", wav_sound_file])
+                    self.log_message("Processing complete!")
+                else:
+                    # Use a more interesting system sound
+                    subprocess.call(["afplay", "/System/Library/Sounds/Submarine.aiff"])
+                    self.log_message("Processing complete!")
+                    
+            elif system == "Linux":
+                # For Linux, try mpg123 or mpg321 for MP3
+                mp3_played = False
+                if os.path.exists(mp3_sound_file):
+                    try:
+                        # Try mpg123 first
+                        subprocess.call(["mpg123", "-q", mp3_sound_file])
+                        mp3_played = True
+                        self.log_message("Processing complete!")
+                    except:
+                        try:
+                            # Try mpg321 as alternative
+                            subprocess.call(["mpg321", "-q", mp3_sound_file])
+                            mp3_played = True
+                            self.log_message("Processing complete!")
+                        except:
+                            pass
+                
+                # If MP3 didn't work or doesn't exist, try WAV
+                if not mp3_played:
+                    if os.path.exists(wav_sound_file):
+                        subprocess.call(["aplay", "-q", wav_sound_file])
+                        self.log_message("Processing complete!")
+                    else:
+                        # Try to use 'paplay' for PulseAudio systems
+                        try:
+                            subprocess.call(["paplay", "/usr/share/sounds/freedesktop/stereo/complete.oga"])
+                            self.log_message("Processing complete!")
+                        except:
+                            # Fall back to system beep on Linux
+                            print('\a')
+                            self.log_message("Processing complete!")
+                    
+        except Exception as e:
+            print(f"Error playing completion sound: {str(e)}")
+            self.log_message("Processing complete!")
 
 
