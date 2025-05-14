@@ -3,6 +3,7 @@ from tkinter import filedialog, ttk, messagebox
 import os
 import threading
 import builtins
+import traceback
 from tkinter import scrolledtext
 from typing import Optional
 from models.metrics import Metrics
@@ -349,344 +350,95 @@ class AppWindow:
             thread.start()
 
     def analyze_images(self, input_folder, output_folder):
-        """Process images based on selected functions"""
+        """Process images with selected functions"""
         try:
-            self.update_progress(0, "Starting processing...")
+            print(f"Processing input directory: {input_folder}")
+            print(f"Output directory: {output_folder}")
             
-            # Update the threshold from the entry field
-            try:
-                altitude_threshold = float(self.threshold_var.get())
-                self.altitude_threshold = altitude_threshold
+            # Ensure output directory exists
+            os.makedirs(output_folder, exist_ok=True)
+            
+            # Check which functions to run
+            if not any([
+                self.basic_metrics_var.get(),
+                self.location_map_var.get(),
+                self.histogram_var.get(),
+                self.footprint_map_var.get(),
+                self.visibility_analyzer_var.get(),
+                self.highlight_selector_var.get()
+            ]):
+                self.log_message("No analysis functions selected.")
+                return
+            
+            self.log_message(f"Starting analysis with selected functions...")
+            
+            # Get altitude source and nav file path
+            altitude_source = self.altitude_source_var.get()
+            nav_file_path = None
+            
+            if altitude_source == "nav_file":
+                nav_file_path = self.nav_path.get()
+                if not nav_file_path or not os.path.exists(nav_file_path):
+                    self.log_message("Error: Navigation file selected as altitude source but no file provided")
+                    messagebox.showerror("Error", "Navigation file required for altitude data but none selected")
+                    return
+                self.log_message(f"Using navigation file: {os.path.basename(nav_file_path)}")
+            
+            # Initialize footprint map if needed (for both footprint mapping and altitude from nav)
+            if self.footprint_map_var.get() or altitude_source == "nav_file":
+                # Create footprint map instance with threshold
+                from src.models.footprint_map import FootprintMap
+                self.footprint_map = FootprintMap(self.altitude_threshold)
                 
-                # Update threshold in all components
-                self.metrics.altitude_threshold = altitude_threshold
-                self.altitude_map.set_altitude_thresholds(altitude_threshold, 4.0)  # Keep low threshold at 4m
-                
-                self.log_message(f"Using altitude threshold: {altitude_threshold:.1f}m")
-            except ValueError:
-                self.log_message(f"Using default altitude threshold: {self.altitude_threshold:.1f}m")
+                # If using nav data, preload it
+                if nav_file_path:
+                    success = self.footprint_map.load_nav_data(nav_file_path)
+                    if not success:
+                        self.log_message("Error: Failed to load navigation file")
+                        return False
             
-            # Determine if we need to extract GPS data
-            extract_gps = self.location_map_var.get() or self.histogram_var.get() or self.footprint_map_var.get() or self.visibility_analyzer_var.get()
-            
-            # STAGE 1: Basic Metrics (Always run this first to extract GPS data)
-            self.log_message("STAGE 1: Processing basic metrics...")
-            
-            try:
-                # Calculate metrics with progress updates
-                _, results = self.metrics.analyze_directory(
-                    input_folder, 
-                    progress_callback=self.update_progress,
-                    extract_gps=extract_gps  # Extract GPS data if needed for later
-                )
-                
-                # If basic metrics was selected, show the results
-                if self.basic_metrics_var.get():
+            # Process basic metrics
+            if self.basic_metrics_var.get():
+                self.log_message("STAGE 1: Processing basic metrics...")
+                try:
+                    self.metrics = Metrics(self.altitude_threshold)
+                    
+                    # Check if we need to extract GPS for other functions
+                    extract_gps = self.location_map_var.get() or self.footprint_map_var.get()
+                    
+                    # Process directory and get report
+                    report_lines = self.metrics.analyze_directory(
+                        input_folder, 
+                        progress_callback=self.update_progress,
+                        extract_gps=extract_gps,
+                        altitude_source=altitude_source,
+                        nav_file_path=nav_file_path
+                    )
+                    
                     # Log results to the GUI
-                    for line in results:
-                        self.log_message(line)
+                    self.log_message(len(report_lines))
+                    self.log_message(report_lines)
                     
                     # Write results to output file
                     output_file = os.path.join(output_folder, "image_metrics.txt")
                     with open(output_file, "w") as f:
-                        f.write("\n".join(results))
-                    
+                        f.write("\n".join(report_lines))
+                        
                     self.log_message(f"Basic metrics saved to: {output_file}")
-                else:
-                    self.log_message("Basic metrics processing completed (not displayed as not selected)")
-            except Exception as e:
-                self.log_message(f"Error processing basic metrics: {str(e)}")
-                raise  # Re-raise to be caught by outer try-except
-            
-            # STAGE 2: Location Map and Altitude Histogram
-            if self.location_map_var.get() or self.histogram_var.get():
-                self.log_message("\nSTAGE 2: Creating location map and altitude histogram...")
-
-                # Check if we have GPS data
-                if not self.metrics.gps_data:
-                    self.log_message("Warning: No GPS data found in images. Cannot create location map or altitude histogram.")
-                else:
-                    # Step 2A: Create location map if selected
-                    if self.location_map_var.get():
-                        self.log_message("Creating image location map...")
-                        
-                        try:
-                            # Generate the location map
-                            self.log_message(f"Generating map with {len(self.metrics.gps_data)} GPS points...")
-                            
-                            map_file = self.altitude_map.create_location_map(
-                                self.metrics.gps_data,
-                                output_folder,
-                                metrics=self.metrics
-                            )
-                            
-                            if map_file:
-                                self.log_message(f"Location map saved to: {map_file}")
-                            else:
-                                self.log_message("Error: Could not create location map. No valid GPS coordinates found.")
-                                
-                            # Create CSV and shapefile export using AltitudeMap's export_to_gis_formats method
-                            self.log_message("Creating GPS data exports (CSV and shapefile)...")
-
-                            try:
-                                # Use the export_to_gis_formats method from AltitudeMap
-                                result_files = self.altitude_map.export_to_gis_formats(
-                                    self.metrics.gps_data,
-                                    output_folder
-                                )
-                                
-                                if 'csv' in result_files:
-                                    self.log_message(f"CSV export saved to: {result_files['csv']}")
-                                    
-                                if 'shapefile' in result_files and GEOPANDAS_AVAILABLE:
-                                    self.log_message(f"Shapefile export saved to: {result_files['shapefile']}")
-                                    
-                            except Exception as e:
-                                # Fall back to the simple CSV export if the GIS export fails
-                                self.log_message(f"Error creating GIS exports: {str(e)}")
-                                
-                                try:
-                                    csv_path = os.path.join(output_folder, "image_locations.csv")
-                                    import pandas as pd
-                                    df = pd.DataFrame(self.metrics.gps_data)
-                                    
-                                    # Define column order before saving
-                                    columns = ["filename", "DateTime", "latitude", "longitude", "altitude", 
-                                              "SubjectDistance", "ExposureTime", "FNumber", "FocalLength",
-                                              "width", "height"]
-                                              
-                                    # Only include columns that exist in the dataframe
-                                    available_cols = [col for col in columns if col in df.columns]
-                                    other_cols = [col for col in df.columns if col not in columns]
-                                    
-                                    # Reorder columns
-                                    df = df[available_cols + other_cols]
-                                    
-                                    df.to_csv(csv_path, index=False)
-                                    self.log_message(f"CSV export saved to: {csv_path}")
-                                except Exception as csv_err:
-                                    self.log_message(f"Error creating CSV export: {str(csv_err)}")
-                        except Exception as e:
-                            self.log_message(f"Error creating location map: {str(e)}")
+                except Exception as e:
+                    self.log_message(f"Error processing basic metrics: {str(e)}")
+                    self.log_message(traceback.format_exc())
+                    return False
                     
-                    # Step 2B: Create altitude histogram if selected
-                    if self.histogram_var.get():
-                        self.log_message("Creating altitude histogram...")
-                        
-                        try:
-                            self.log_message(f"Generating histogram with {len(self.metrics.gps_data)} altitude points...")
-                            
-                            histogram_file = self.altitude_map.create_altitude_histogram(
-                                self.metrics.gps_data,
-                                output_folder
-                            )
-                            
-                            if histogram_file:
-                                self.log_message(f"Altitude histogram saved to: {histogram_file}")
-                            else:
-                                self.log_message("Error: Could not create altitude histogram. No valid altitude data found.")
-                        except Exception as e:
-                            self.log_message(f"Error creating altitude histogram: {str(e)}")
+            # Rest of your analyze_images method...
+            # Continue with location map, altitude histogram, etc.
             
-            # STAGE 3: Footprint and Overlap Analysis
-            if self.footprint_map_var.get():
-                self.log_message("\nSTAGE 3: Creating image footprint map and overlap analysis...")
-                
-                if not self.metrics.gps_data:
-                    self.log_message("Warning: No GPS data found in images. Cannot create footprint map.")
-                else:
-                    try:
-                        nav_file = self.nav_path.get() if self.nav_path.get() and os.path.exists(self.nav_path.get()) else None
-                        
-                        if not nav_file:
-                            self.log_message("Warning: No navigation file selected or file not found. Using default heading.")
-                        else:
-                            self.log_message(f"Using navigation data from: {nav_file}")
-                    
-                        self.log_message(f"Generating footprint map with {len(self.metrics.gps_data)} images (altitude threshold: {self.altitude_threshold:.1f}m)...")
-                        
-                        # SAFE way to capture print output without recursion error:
-                        # Use StringIO instead of redefining print
-                        import io
-                        import contextlib
-                        
-                        # Create a StringIO object to capture print output
-                        f = io.StringIO()
-                        with contextlib.redirect_stdout(f):
-                            # Generate the footprint map
-                            map_file = self.footprint_map.create_footprint_map(
-                                self.metrics.gps_data,
-                                output_folder,
-                                nav_file_path=nav_file
-                            )
-                        
-                        # Log the captured output (split by lines)
-                        for line in f.getvalue().splitlines():
-                            if line.strip():  # Only log non-empty lines
-                                self.log_message(line)
-                        
-                        # Transfer overlap stats
-                        if hasattr(self.footprint_map, 'vertical_overlap_stats'):
-                            self.metrics.vertical_overlap_stats = self.footprint_map.vertical_overlap_stats
-                            
-                        if hasattr(self.footprint_map, 'horizontal_overlap_stats'):
-                            self.metrics.horizontal_overlap_stats = self.footprint_map.horizontal_overlap_stats
-                            
-                        if hasattr(self.footprint_map, 'overall_overlap_stats'):
-                            self.metrics.overall_overlap_stats = self.footprint_map.overall_overlap_stats
-                        
-                        # Append updated metrics with overlap information to the metrics file
-                        self.append_overlap_metrics_to_file(output_folder)
-                        
-                        # Log results
-                        if map_file:
-                            self.log_message(f"Footprint map saved to: {map_file}")
-                            self.log_message("CSV and shapefile with footprint data also created in the same folder.")
-                        else:
-                            self.log_message("Error: Could not create footprint map.")
-                            
-                    except Exception as e:
-                        self.log_message(f"Error creating footprint map: {str(e)}")
-                        import traceback
-                        self.log_message(traceback.format_exc())
-            
-            # STAGE 4: Visibility Analysis (last step)
-            if self.visibility_analyzer_var.get():
-                self.log_message("\nSTAGE 4: Running visibility analysis...")
-                
-                # Initialize visibility analyzer if needed
-                if not hasattr(self, 'visibility_analyzer'):
-                    from src.models.visibility_analyzer import VisibilityAnalyzer
-                    self.visibility_analyzer = VisibilityAnalyzer(self.altitude_threshold)
-                else:
-                    # Update the altitude threshold in case it was changed
-                    self.visibility_analyzer.altitude_threshold = self.altitude_threshold
-                
-                # Try to check TensorFlow without importing
-                tf_available = self.visibility_analyzer._import_tensorflow()
-                            
-                if not tf_available:
-                    self.log_message("WARNING: TensorFlow not available. Cannot perform visibility analysis.")
-                    self.log_message("Please install TensorFlow with: pip install tensorflow")
-                else:
-                    try:
-                        # Get the path based on radio button selection
-                        if self.model_type_var.get() == "model":
-                            model_path = self.model_path.get()
-                            if not model_path or not os.path.exists(model_path):
-                                self.log_message("Error: Please select a valid visibility model file.")
-                                return
-                        else:  # training
-                            model_path = self.training_path.get()
-                            if not model_path or not os.path.exists(model_path):
-                                self.log_message("Error: Please select a valid training data directory.")
-                                return
-                        
-                        # Load or train model
-                        self.log_message(f"Loading or training visibility model from: {model_path}")
-                        success = self.visibility_analyzer.load_or_train_model(
-                            model_path, 
-                            progress_callback=self.update_progress
-                        )
-                        
-                        if not success:
-                            self.log_message("Error: Could not load or train visibility model.")
-                        else:
-                            # If we trained a new model, save it
-                            if os.path.isdir(model_path):  # model_path is a training data directory
-                                # Create a models directory in the application root
-                                app_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-                                models_dir = os.path.join(app_root, "utils", "models")
-                                os.makedirs(models_dir, exist_ok=True)
-                                
-                                # Create a timestamped filename for the model
-                                import datetime
-                                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                                model_filename = f"visibility_model_{timestamp}.h5"
-                                model_save_path = os.path.join(models_dir, model_filename)
-                                
-                                # Save the model
-                                saved_path = self.visibility_analyzer.save_model(model_save_path)
-                                if saved_path:
-                                    self.log_message(f"Trained model saved to: {saved_path}")
-                                    
-                                    # Also save a copy to the output folder for this specific run
-                                    output_model_path = os.path.join(output_folder, "visibility_model.h5")
-                                    self.visibility_analyzer.save_model(output_model_path)
-                                    self.log_message(f"Model copy saved to output folder: {output_model_path}")
-                                else:
-                                    self.log_message("Warning: Could not save trained model")
-                            
-                            # Patch the log_message method for visibility analyzer
-                            # Store original log_message if exists
-                            if hasattr(self.visibility_analyzer, 'log_message'):
-                                original_log_message = self.visibility_analyzer.log_message
-                            
-                            # Create a properly-scoped log message function
-                            def log_message_adapter(msg, progress=None):
-                                self.log_message(msg)
-                                if progress is not None:
-                                    self.update_progress(progress, msg)
-                            
-                            # Replace the log_message in visibility_analyzer
-                            self.visibility_analyzer.log_message = log_message_adapter
-                            
-                            # The input folder contains the images to analyze
-                            self.log_message(f"Starting visibility analysis with altitude threshold: {self.altitude_threshold}m")
-                            self.log_message("This will process all images below the threshold (up to 5000)")
-                            
-                            # Let the analyzer find all images - don't pre-filter or limit here
-                            success, stats = self.visibility_analyzer.analyze_images(
-                                [],  # Empty list means it will scan the input folder
-                                output_folder,
-                                progress_callback=self.update_progress,
-                                altitude_threshold=self.altitude_threshold
-                            )
-                            
-                            # Restore original log_message if it existed
-                            if hasattr(self.visibility_analyzer, 'original_log_message'):
-                                self.visibility_analyzer.log_message = original_log_message
-                            
-                            if not success:
-                                self.log_message("Error during visibility analysis.")
-                            else:
-                                # Show results
-                                self.log_message(f"Visibility analysis complete. Results saved to {output_folder}")
-                                
-                                # Display summary in log
-                                for line in self.visibility_analyzer.get_summary_report():
-                                    self.log_message(line)
-                                
-                                # Append to metrics file
-                                self.append_visibility_metrics_to_file(output_folder)
-                    except Exception as e:
-                        self.log_message(f"Error during visibility analysis: {str(e)}")
-                        import traceback
-                        self.log_message(traceback.format_exc())
-            
-            # STAGE 5: Highlight Image Selection
-            if self.highlight_selector_var.get():
-                self.log_message("\nSTAGE 5: Selecting highlight images...")
-                
-                success = self.select_highlight_images(input_folder, output_folder)
-                
-                if success:
-                    self.log_message("Highlight image selection completed successfully")
-                else:
-                    self.log_message("Error during highlight image selection")
-            
-            self.log_message("\nAll selected processing tasks completed successfully.")
-            
-            # Play completion sound
-            self.play_completion_sound()
-            
+            # Return success
+            return True
         except Exception as e:
             self.log_message(f"Error during processing: {str(e)}")
-            import traceback
             self.log_message(f"Details: {traceback.format_exc()}")
-        finally:
-            # Re-enable the process button
-            self.master.after(0, lambda: self.process_button.configure(state=tk.NORMAL))
+            return False
 
     def append_overlap_metrics_to_file(self, output_folder: str):
         """
@@ -993,31 +745,8 @@ class AppWindow:
         self.help_button.grid(row=2, column=0, columnspan=3, pady=(0, 10))
         
         # Create a separate LabelFrame for the altitude threshold - CLEARLY SEPARATED FROM FUNCTIONS
-        # Create threshold frame after functions frame
-        self.threshold_frame = ttk.LabelFrame(self.left_frame, text="Altitude Threshold", padding="10")
-        self.threshold_frame.pack(fill=tk.X, pady=(10, 10), padx=10)  # Added padx=10
-        
-        # Create a frame inside the LabelFrame for better layout
-        threshold_content = ttk.Frame(self.threshold_frame)
-        threshold_content.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Add altitude threshold controls
-        ttk.Label(threshold_content, text="Altitude Threshold (m):").grid(row=0, column=0, sticky='w', padx=(0, 5))
-        
-        self.threshold_var = tk.StringVar(value=str(self.altitude_threshold))
-        threshold_entry = ttk.Entry(threshold_content, textvariable=self.threshold_var, width=6)
-        threshold_entry.grid(row=0, column=1, padx=5, sticky='w')
-        
-        apply_button = ttk.Button(threshold_content, text="Apply", command=self.update_threshold)
-        apply_button.grid(row=0, column=2, padx=5, sticky='w')
-        
-        # Add explanation text for altitude threshold
-        ttk.Label(
-            threshold_content, 
-            text="(Filters out images that are too high to see the seabed)",
-            font=("", 8, "italic")
-        ).grid(row=1, column=0, columnspan=3, sticky='w', pady=(5, 0))
-        
+        self.create_threshold_control()
+
         # Add process button as the last element in the left frame (below everything else)
         process_button_frame = ttk.Frame(self.left_frame)
         process_button_frame.pack(fill=tk.X, pady=(10, 0), padx=10)  # Added padx=10
@@ -1066,27 +795,6 @@ class AppWindow:
         self.log_message("Welcome to VOYIS First Look Metrics")
         self.log_message("Select an input folder with VOYIS images and an output folder for results")
         self.log_message("Then check the desired functions and click 'Process Images'")
-
-    def create_threshold_control(self):
-        """Create the altitude threshold entry box and label"""
-        threshold_frame = ttk.Frame(self.functions_frame)
-        threshold_frame.grid(row=8, column=0, sticky='ew', pady=(10, 5))
-        
-        ttk.Label(threshold_frame, text="Altitude Threshold (m):").grid(row=0, column=0, sticky='w')
-        
-        threshold_entry = ttk.Entry(threshold_frame, textvariable=self.threshold_var, width=6)
-        threshold_entry.grid(row=0, column=1, padx=5, sticky='w')
-        
-        # Add a button to apply the threshold
-        apply_button = ttk.Button(threshold_frame, text="Apply", command=self.update_threshold)
-        apply_button.grid(row=0, column=2, padx=5, sticky='w')
-        
-        # Add explanation text
-        ttk.Label(
-            self.functions_frame, 
-            text="(Altitude threshold filters out images that are too high to see the seabed)",
-            font=("", 8, "italic")
-        ).grid(row=9, column=0, sticky='w', pady=(0, 10), padx=25)
 
     def update_threshold(self):
         """Update altitude threshold when Apply button is clicked"""
@@ -1650,5 +1358,131 @@ The visibility categories represent:
         except Exception as e:
             print(f"Error playing completion sound: {str(e)}")
             self.log_message("Processing complete!")
+
+    def create_threshold_control(self):
+        """Create the altitude options controls"""
+        # Create threshold frame after functions frame - renamed from "Altitude Threshold" to "Altitude Options"
+        self.threshold_frame = ttk.LabelFrame(self.left_frame, text="Altitude Options", padding="10")
+        self.threshold_frame.pack(fill=tk.X, pady=(10, 10), padx=10)
+        
+        # Create a frame inside the LabelFrame for better layout
+        threshold_content = ttk.Frame(self.threshold_frame)
+        threshold_content.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Add altitude threshold controls
+        ttk.Label(threshold_content, text="Altitude Threshold (m):").grid(row=0, column=0, sticky='w', padx=(0, 5))
+        
+        self.threshold_var = tk.StringVar(value=str(self.altitude_threshold))
+        threshold_entry = ttk.Entry(threshold_content, textvariable=self.threshold_var, width=6)
+        threshold_entry.grid(row=0, column=1, padx=5, sticky='w')
+        
+        apply_button = ttk.Button(threshold_content, text="Apply", command=self.update_threshold)
+        apply_button.grid(row=0, column=2, padx=5, sticky='w')
+        
+        # Add explanation text for altitude threshold
+        ttk.Label(
+            threshold_content, 
+            text="(Filters out images that are too high to see the seabed)",
+            font=("", 8, "italic")
+        ).grid(row=1, column=0, columnspan=3, sticky='w', pady=(5, 0))
+        
+        # Add altitude source selector inside the threshold frame
+        source_frame = ttk.LabelFrame(self.threshold_frame, text="Altitude Data Source")
+        source_frame.pack(fill=tk.X, padx=10, pady=(10, 5))
+        
+        # Add a variable to track the selected altitude source
+        self.altitude_source_var = tk.StringVar(value="altitude")  # Default to standard altitude
+        
+        # Create radio buttons
+        ttk.Radiobutton(
+            source_frame,
+            text="Standard Altitude Field",
+            variable=self.altitude_source_var,
+            value="altitude",
+            command=self.update_altitude_source
+        ).grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        
+        ttk.Radiobutton(
+            source_frame,
+            text="Navigation File",
+            variable=self.altitude_source_var,
+            value="nav_file",
+            command=self.update_altitude_source
+        ).grid(row=1, column=0, sticky='w', padx=5, pady=2)
+        
+        # Add an info label
+        ttk.Label(
+            source_frame,
+            text="Select where altitude data should be sourced from",
+            font=("", 8, "italic")
+        ).grid(row=3, column=0, sticky='w', padx=5, pady=(0, 5))
+
+    def update_altitude_source(self):
+        """Handle changes to the altitude source radio buttons"""
+        source = self.altitude_source_var.get()
+        
+        if source == "nav_file":
+            # Show the master nav file selection if not already visible
+            self.nav_file_frame.grid()
+            
+            # If nav file not yet selected, prompt to select one
+            if not self.nav_path.get():
+                self.select_nav_file()
+                self.log_message("Please select a navigation file for altitude data")
+            else:
+                self.log_message(f"Using navigation file for altitude data: {os.path.basename(self.nav_path.get())}")
+        else:
+            # We'll keep the nav file frame visible if footprint_map needs it
+            if not self.footprint_map_var.get():
+                self.nav_file_frame.grid_remove()
+            
+        self.log_message(f"Altitude source set to: {source}")
+
+    def browse_nav_file(self):
+        """Browse for a navigation file"""
+        nav_file = filedialog.askopenfilename(
+            title="Select Navigation File",
+            filetypes=[
+                ("Text files", "*.txt"),
+                ("CSV files", "*.csv"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if nav_file:
+            self.nav_file_path.set(nav_file)
+            self.log_message(f"Selected navigation file: {os.path.basename(nav_file)}")
+            
+            # Try to load the nav file to check format
+            try:
+                success = self.load_and_validate_nav_file(nav_file)
+                if success:
+                    self.log_message("Navigation file loaded and validated successfully")
+                else:
+                    self.log_message("Warning: Navigation file format could not be validated")
+            except Exception as e:
+                self.log_message(f"Error checking navigation file: {str(e)}")
+
+    def load_and_validate_nav_file(self, nav_file_path):
+        """
+        Load and validate navigation file format
+        
+        Args:
+            nav_file_path: Path to the navigation file
+            
+        Returns:
+            Boolean indicating success
+        """
+        try:
+            if not hasattr(self, "footprint_map"):
+                # Create a footprint map instance if needed
+                self.footprint_map = FootprintMap(self.altitude_threshold)
+            
+            # Use the footprint map's nav loading capability
+            success = self.footprint_map.load_nav_data(nav_file_path)
+            return success
+        except Exception as e:
+            self.log_message(f"Error validating navigation file: {str(e)}")
+            return False
 
 

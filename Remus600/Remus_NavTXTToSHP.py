@@ -261,17 +261,19 @@ def process_nav_file(nav_file):
         raise Exception(error_msg)
 
 def create_shapefile(coord_data, dive_num, output_folder):
-    """Create a shapefile from the provided coordinate data"""
+    """Create shapefiles from the provided coordinate data"""
     try:
-        # Create array to store points
-        array = arcpy.Array()
-        
-        # Set output file names
-        fc = f"{dive_num}.shp"
-        shapefile_w_path = os.path.join(output_folder, fc)
+        # Print info about the data
+        print(f"Creating shapefiles for dive {dive_num}")
+        print(f"Total points: {len(coord_data)}")
         
         # Set spatial reference to WGS84
         spatRef = arcpy.SpatialReference(4326)
+        
+        # ---- PART 1: CREATE POLYLINE SHAPEFILE ----
+        # Set output file names
+        fc = f"{dive_num}.shp"
+        shapefile_w_path = os.path.join(output_folder, fc)
         
         # Create empty polyline feature class
         arcpy.CreateFeatureclass_management(
@@ -282,14 +284,17 @@ def create_shapefile(coord_data, dive_num, output_folder):
         )
         
         # Insert points into shapefile as polylines
+        array = arcpy.Array()
         cursor = arcpy.da.InsertCursor(shapefile_w_path, ["SHAPE@"])
         
         # Make sure coord_data has at least 2 points
         if len(coord_data) < 2:
             raise ValueError("Not enough coordinate points to create a line (minimum 2 required)")
         
+        # Create polylines between consecutive points
         for i in range(len(coord_data) - 1):
             try:
+                # Get coordinates
                 x = float(coord_data.iloc[i, coord_data.columns.get_loc("longitude")])
                 y = float(coord_data.iloc[i, coord_data.columns.get_loc("latitude")])
                 point = arcpy.Point(x, y)
@@ -300,11 +305,14 @@ def create_shapefile(coord_data, dive_num, output_folder):
                 point1 = arcpy.Point(x1, y1)
                 array.add(point1)
                 
+                # Create and insert polyline
                 myline = arcpy.Polyline(array, spatRef)
                 array.removeAll()
                 cursor.insertRow([myline])
+                
             except Exception as e:
-                print(f"Warning: Skipping point at index {i}: {str(e)}")
+                print(f"Warning: Skipping line segment at index {i}: {str(e)}")
+                array.removeAll()
                 continue
         
         del cursor
@@ -356,10 +364,106 @@ def create_shapefile(coord_data, dive_num, output_folder):
             "METERS"
         )
         
-        return dissolved_shpfile
+        # ---- PART 2: CREATE POINT SHAPEFILE WITH ATTRIBUTES ----
+        # Set output filename for point shapefile
+        point_fc = f"{dive_num}_points.shp"
+        point_shapefile = os.path.join(output_folder, point_fc)
+        
+        # Create empty point feature class
+        arcpy.CreateFeatureclass_management(
+            out_path=output_folder, 
+            out_name=point_fc, 
+            geometry_type='POINT', 
+            spatial_reference=spatRef
+        )
+        
+        # Helper function to truncate field names to 10 characters
+        def truncate_field_name(name):
+            if len(name) > 10:
+                print(f"Truncating field name '{name}' to '{name[:10]}'")
+                return name[:10]
+            return name
+        
+        # Add DIVE field
+        arcpy.management.AddField(point_shapefile, "DIVE", "TEXT")
+        
+        # Add fields from the DataFrame with appropriate data types
+        print("Adding fields to point shapefile:")
+        for column in coord_data.columns:
+            # Skip lat/lon as they're used for geometry
+            if column.lower() in ['latitude', 'longitude']:
+                continue
+                
+            # Truncate field name for shapefile compatibility
+            field_name = truncate_field_name(column.upper())
+            
+            try:
+                # Determine field type based on data
+                if coord_data[column].dtype in [float, int, 'float64', 'int64']:
+                    # Numeric field
+                    print(f"  Adding numeric field: {field_name}")
+                    arcpy.management.AddField(point_shapefile, field_name, "DOUBLE", 8)
+                else:
+                    # Text field
+                    print(f"  Adding text field: {field_name}")
+                    arcpy.management.AddField(point_shapefile, field_name, "TEXT")
+            except Exception as e:
+                print(f"  Error adding field {field_name}: {str(e)}")
+        
+        # Get actual fields in the feature class
+        fields = [field.name for field in arcpy.ListFields(point_shapefile)]
+        
+        # Create a list of fields for the insert cursor
+        insert_fields = ["SHAPE@XY", "DIVE"]
+        field_map = {}  # Maps shapefile fields to DataFrame columns
+        
+        # Map fields to columns
+        for field in fields:
+            if field in ["OBJECTID", "Shape", "DIVE"]:
+                continue
+                
+            # Find matching column in DataFrame
+            for column in coord_data.columns:
+                if field.lower() == truncate_field_name(column.lower()):
+                    insert_fields.append(field)
+                    field_map[field] = column
+                    break
+        
+        print(f"Fields for inserting: {insert_fields}")
+        
+        # Insert points with attributes
+        points_created = 0
+        with arcpy.da.InsertCursor(point_shapefile, insert_fields) as cursor:
+            for i in range(len(coord_data)):
+                try:
+                    # Get coordinates
+                    x = float(coord_data.iloc[i, coord_data.columns.get_loc("longitude")])
+                    y = float(coord_data.iloc[i, coord_data.columns.get_loc("latitude")])
+                    
+                    # Create row values
+                    row_values = [(x, y), dive_num]
+                    
+                    # Add attribute values
+                    for field in insert_fields[2:]:
+                        if field in field_map and field_map[field] in coord_data.columns:
+                            value = coord_data.iloc[i, coord_data.columns.get_loc(field_map[field])]
+                            row_values.append(value)
+                    
+                    # Insert the point
+                    cursor.insertRow(row_values)
+                    points_created += 1
+                    
+                except Exception as e:
+                    print(f"Warning: Skipping point at index {i}: {str(e)}")
+                    continue
+        
+        print(f"Created {points_created} points with attributes")
+        
+        return dissolved_shpfile, point_shapefile
     
     except Exception as e:
         error_msg = f"Error creating shapefile for {dive_num}: {str(e)}"
+        print(traceback.format_exc())  # Print detailed error information
         raise Exception(error_msg)
 
 def select_output_folder():
