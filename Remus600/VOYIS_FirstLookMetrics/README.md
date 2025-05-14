@@ -72,9 +72,9 @@ VOYIS_FirstLookMetrics/
 │ │ ├── visibility_analyzer.py # ML-based visibility classification 
 │ │ └── highlight_selector.py # Analysis for selecting highlight images 
 │ └── utils/ 
-│   ├── init.py 
-│   ├── path_utils.py # Utilities for path and file management 
-│   └── highlight_panel_creator.py # Creates highlight image panels 
+│ ├── init.py 
+│ ├── path_utils.py # Utilities for path and file management 
+│ └── highlight_panel_creator.py # Creates highlight image panels 
 ├── requirements.txt # Project dependencies 
 └── README.md # Project documentation
 ```

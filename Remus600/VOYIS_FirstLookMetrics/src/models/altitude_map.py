@@ -532,17 +532,8 @@ class AltitudeMap:
             print(traceback.format_exc())
             return result_files
 
-    def extract_exif_data(self, image_path: str, altitude_source: str = "altitude") -> Dict:
-        """
-        Extract EXIF data and image dimensions from an image file
-        
-        Args:
-            image_path: Path to the image
-            altitude_source: Source field for altitude data ("altitude" or "subject_distance")
-            
-        Returns:
-            Dictionary of extracted data
-        """
+    def extract_exif_data(self, image_path: str) -> Dict:
+        """Extract EXIF data and image dimensions from an image file"""
         try:
             from PIL import Image, ExifTags
             
@@ -550,91 +541,71 @@ class AltitudeMap:
                 return {}
                 
             with Image.open(image_path) as img:
-                result = {}
-                
                 # Get image dimensions
-                result['width'], result['height'] = img.size
+                width, height = img.size
                 
-                # Get the filename
-                result['filename'] = os.path.basename(image_path)
+                # Store dimensions regardless of EXIF availability
+                result = {
+                    'ImageWidth': width,
+                    'ImageHeight': height
+                }
                 
-                # Extract EXIF data if available
+                # Get EXIF data
                 exif_data = img._getexif()
-                if exif_data:
-                    # Convert numeric EXIF tags to text names
-                    exif = {
-                        ExifTags.TAGS[k]: v
-                        for k, v in exif_data.items()
-                        if k in ExifTags.TAGS
-                    }
+                if not exif_data:
+                    return result  # Return just the dimensions if no EXIF
                     
-                    # Extract GPS info
-                    gps_info = {}
-                    if 'GPSInfo' in exif:
-                        for key, val in exif['GPSInfo'].items():
-                            if key in ExifTags.GPSTAGS:
-                                gps_info[ExifTags.GPSTAGS[key]] = val
+                # Convert EXIF tag numbers to readable names
+                exif = {
+                    ExifTags.TAGS.get(tag, tag): value
+                    for tag, value in exif_data.items()
+                    if tag in ExifTags.TAGS
+                }
+                
+                # Extract specific EXIF values
+                # DateTime
+                if 'DateTimeOriginal' in exif:
+                    result['DateTime'] = exif['DateTimeOriginal']
+                elif 'DateTime' in exif:
+                    result['DateTime'] = exif['DateTime']
                     
-                    # Extract coordinates
-                    if 'GPSLatitude' in gps_info and 'GPSLongitude' in gps_info:
-                        lat = self._convert_to_degrees(gps_info['GPSLatitude'])
-                        lon = self._convert_to_degrees(gps_info['GPSLongitude'])
+                # ExposureTime
+                if 'ExposureTime' in exif:
+                    exposure = exif['ExposureTime']
+                    if isinstance(exposure, tuple):
+                        result['ExposureTime'] = f"{exposure[0]}/{exposure[1]}"
+                    else:
+                        result['ExposureTime'] = str(exposure)
+                
+                # FNumber
+                if 'FNumber' in exif:
+                    fnumber = exif['FNumber']
+                    if isinstance(fnumber, tuple):
+                        result['FNumber'] = round(fnumber[0] / fnumber[1], 1)
+                    else:
+                        result['FNumber'] = fnumber
+                
+                # FocalLength
+                if 'FocalLength' in exif:
+                    focal = exif['FocalLength']
+                    if isinstance(focal, tuple):
+                        result['FocalLength'] = round(focal[0] / focal[1], 1)
+                    else:
+                        result['FocalLength'] = focal
                         
-                        # Apply reference direction
-                        if gps_info.get('GPSLatitudeRef', 'N') != 'N':
-                            lat = -lat
-                        if gps_info.get('GPSLongitudeRef', 'E') != 'E':
-                            lon = -lon
-                            
-                        result['latitude'] = lat
-                        result['longitude'] = lon
-                    
-                    # Get altitude based on the selected source
-                    if altitude_source == "subject_distance" and 'SubjectDistance' in exif:
-                        # Use SubjectDistance as altitude
-                        distance = exif['SubjectDistance']
-                        if isinstance(distance, tuple):
-                            result['altitude'] = round(distance[0] / distance[1], 1)
-                        else:
-                            result['altitude'] = distance
-                        
-                        # Flag that this is from subject distance
-                        result['altitude_source'] = 'subject_distance'
-                        
-                    elif 'GPSAltitude' in gps_info:
-                        # Use standard GPS altitude
-                        altitude = gps_info['GPSAltitude']
-                        if isinstance(altitude, tuple):
-                            altitude_val = altitude[0] / altitude[1]
-                        else:
-                            altitude_val = altitude
-                            
-                        if gps_info.get('GPSAltitudeRef', 0) == 1:
-                            altitude_val = -altitude_val
-                            
-                        result['altitude'] = altitude_val
-                        result['altitude_source'] = 'gps_altitude'
-                    
-                    # DateTime
-                    if 'DateTimeOriginal' in exif:
-                        result['DateTime'] = exif['DateTimeOriginal']
-                    elif 'DateTime' in exif:
-                        result['DateTime'] = exif['DateTime']
-                    
-                    # Other fields (add as needed)
-                    for field in ['ExposureTime', 'FNumber', 'FocalLength', 'SubjectDistance']:
-                        if field in exif:
-                            val = exif[field]
-                            if isinstance(val, tuple):
-                                result[field] = round(val[0] / val[1], 1)
-                            else:
-                                result[field] = val
-                    
-                    return result
-            return {}
+                # SubjectDistance
+                if 'SubjectDistance' in exif:
+                    distance = exif['SubjectDistance']
+                    if isinstance(distance, tuple):
+                        result['SubjectDistance'] = round(distance[0] / distance[1], 1)
+                    else:
+                        result['SubjectDistance'] = distance
+                
+                return result
         except Exception as e:
             print(f"Error extracting EXIF data from {image_path}: {e}")
             return {}
+
 
     def _add_scale_bar(self, ax, scale_info=None):
         """

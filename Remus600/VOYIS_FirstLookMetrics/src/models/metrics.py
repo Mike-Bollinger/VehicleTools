@@ -8,8 +8,6 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-from src.models.altitude_map import AltitudeMap
-
 class Metrics:
     def __init__(self, altitude_threshold=9.0):
         # Initialize counters
@@ -40,142 +38,99 @@ class Metrics:
         self.raw_pattern = re.compile(r'ESC_stills_raw_PPS_')
         self.processed_pattern = re.compile(r'ESC_stills_processed_PPS_')
     
-    def analyze_directory(self, directory_path: str, progress_callback: Optional[Callable] = None, 
-                          extract_gps: bool = False, altitude_source: str = "altitude",
-                          nav_file_path: Optional[str] = None) -> List[str]:
+    def analyze_directory(self, input_folder: str, progress_callback: Callable = None, extract_gps: bool = False) -> Tuple[int, List[str]]:
         """
-        Analyze a directory of images
+        Analyze the input directory and count/measure image files
         
         Args:
-            directory_path: Path to directory
-            progress_callback: Optional callback for progress updates
-            extract_gps: Whether to extract GPS data
-            altitude_source: Source field for altitude data ("altitude", "nav_file")
-            nav_file_path: Path to navigation file (required if altitude_source is "nav_file")
+            input_folder: Path to input directory
+            progress_callback: Function to call with progress updates (receives percentage and message)
+            extract_gps: Whether to extract GPS data for mapping
             
         Returns:
-            List of report lines
+            Tuple of (total_files_processed, results_list)
         """
-        try:
-            # Reset counters
-            self.processed_count = 0
-            self.processed_size = 0
-            self.raw_count = 0
-            self.raw_size = 0
-            self.other_count = 0
-            self.other_size = 0
+        # Reset metrics
+        self.processed_count = 0
+        self.processed_size = 0
+        self.raw_count = 0
+        self.raw_size = 0
+        self.other_count = 0
+        self.other_size = 0
+        self.gps_data = []
+        
+        # Check if PIL is available for GPS extraction
+        if extract_gps and not PIL_AVAILABLE:
+            if progress_callback:
+                progress_callback(0, "Warning: PIL/Pillow library not available. GPS data extraction disabled.")
+            extract_gps = False
+        
+        # Count total files for progress tracking
+        total_files = 0
+        for root, _, files in os.walk(input_folder):
+            total_files += len(files)
             
-            # Clear lists
-            self.gps_data = []
-            self.no_gps_images = []
-            self.above_threshold_images = []
-            self.above_threshold_values = {}
-            
-            # Set up the altitude map
-            self.altitude_map = AltitudeMap()
-            self.altitude_map.set_altitude_thresholds(self.altitude_threshold)
-            
-            # Initialize FootprintMap for nav data if needed
-            nav_data_fp_map = None
-            if altitude_source == "nav_file" and nav_file_path and os.path.exists(nav_file_path):
-                try:
-                    from src.models.footprint_map import FootprintMap
-                    nav_data_fp_map = FootprintMap(self.altitude_threshold)
-                    success = nav_data_fp_map.load_nav_data(nav_file_path)
-                    if not success:
-                        print("Failed to load navigation data for altitude extraction")
-                        nav_data_fp_map = None
-                except Exception as e:
-                    print(f"Error loading navigation data: {e}")
-                    nav_data_fp_map = None
-
-            # Process directory
-            if os.path.isdir(directory_path):
-                # Get list of image files
-                image_paths = []
-                for root, _, files in os.walk(directory_path):
-                    for file in files:
-                        if file.lower().endswith(('.jpg', '.jpeg', '.png', '.tif', '.tiff')):
-                            image_path = os.path.join(root, file)
-                            image_paths.append(image_path)
-                            
-                # Sort files for consistent processing
-                image_paths.sort()
+        if progress_callback:
+            progress_callback(0, f"Found {total_files} files to analyze...")
+        
+        processed_files = 0
+        
+        # Walk through all files in the input folder
+        for root, _, files in os.walk(input_folder):
+            for file in files:
+                file_path = os.path.join(root, file)
+                file_size = os.path.getsize(file_path)
                 
-                # Process each image
-                total_files = len(image_paths)
-                
-                for i, image_path in enumerate(image_paths):
-                    try:
-                        # Update progress if callback provided
-                        if progress_callback and i % 10 == 0:  # Update every 10 images
-                            progress = (i + 1) / total_files
-                            progress_callback(progress, f"Processing image {i+1} of {total_files}")
-                        
-                        # Get file size
-                        file_size = os.path.getsize(image_path)
-                        
-                        # Classify file
-                        filename = os.path.basename(image_path)
-                        if self.processed_pattern.search(filename):
-                            self.processed_count += 1
-                            self.processed_size += file_size
-                        elif self.raw_pattern.search(filename):
-                            self.raw_count += 1
-                            self.raw_size += file_size
-                        else:
-                            self.other_count += 1
-                            self.other_size += file_size
-                        
-                        # Extract EXIF data for processed images only
-                        if self.processed_pattern.search(filename) or extract_gps:
-                            # Extract EXIF data
-                            exif_data = self.altitude_map.extract_exif_data(image_path, altitude_source)
-                            
-                            # Handle navigation altitude if requested
-                            if altitude_source == "nav_file" and nav_data_fp_map and 'DateTime' in exif_data:
-                                try:
-                                    # Parse the datetime from EXIF
-                                    img_datetime = self._parse_exif_datetime(exif_data['DateTime'])
-                                    
-                                    if img_datetime:
-                                        # Use the FootprintMap to get altitude from nav data
-                                        nav_altitude = nav_data_fp_map.match_image_to_nav_for_altitude(img_datetime)
-                                        
-                                        if nav_altitude is not None:
-                                            # Update altitude from nav record
-                                            exif_data['altitude'] = nav_altitude
-                                            exif_data['altitude_source'] = 'nav_file'
-                                except Exception as e:
-                                    print(f"Error processing nav altitude for {image_path}: {e}")
-                            
-                            # Check if GPS coordinates are available
-                            if all(key in exif_data for key in ['latitude', 'longitude', 'altitude']):
-                                # Apply altitude threshold
-                                if exif_data['altitude'] > self.altitude_threshold:
-                                    self.above_threshold_images.append(filename)
-                                    self.above_threshold_values[filename] = exif_data['altitude']
-                                
-                                # Add to GPS data for mapping
-                                self.gps_data.append(exif_data)
-                            else:
-                                self.no_gps_images.append(filename)
-                                
-                    except Exception as e:
-                        print(f"Error processing file {image_path}: {e}")
-                        
-                # Return the summary report
-                return self.get_summary_report()
+                # Update progress
+                processed_files += 1
+                if progress_callback:
+                    progress = (processed_files / total_files) * 100 if total_files > 0 else 0
                     
-            else:
-                print("Invalid directory path")
-                return ["Invalid directory path"]
+                    # Only report progress on milestones to avoid GUI flooding
+                    if processed_files == 1 or processed_files == total_files or processed_files % 1000 == 0:
+                        progress_callback(progress, f"Analyzed {processed_files} of {total_files} files...")
                 
-        except Exception as e:
-            print(f"Error analyzing directory: {e}")
-            import traceback
-            print(traceback.format_exc())
-            return [f"Error analyzing directory: {str(e)}"]
+                # Determine file type
+                file_type = None
+                if self.processed_pattern.search(file):
+                    self.processed_count += 1
+                    self.processed_size += file_size
+                    file_type = "processed"
+                    # Report milestones
+                    if self.processed_count % 100 == 0 and progress_callback:
+                        progress_callback(progress, f"Found {self.processed_count} processed images so far...")
+                    
+                    # Extract GPS data from processed images only
+                    if extract_gps and file.lower().endswith(('.jpg', '.jpeg', '.tiff', '.tif', '.png')):
+                        try:
+                            gps_info = self.extract_gps_from_image(file_path)
+                            if gps_info:
+                                gps_info['file_type'] = file_type
+                                gps_info['filename'] = file
+                                self.gps_data.append(gps_info)
+                                if len(self.gps_data) % 10 == 0 and progress_callback:
+                                    progress_callback(progress, f"Extracted GPS data from {len(self.gps_data)} processed images so far...")
+                        except Exception as e:
+                            if progress_callback:
+                                progress_callback(progress, f"Could not extract GPS data from {file}: {str(e)}")
+                
+                elif self.raw_pattern.search(file):
+                    self.raw_count += 1
+                    self.raw_size += file_size
+                    file_type = "raw"
+                    # Report milestones
+                    if self.raw_count % 100 == 0 and progress_callback:
+                        progress_callback(progress, f"Found {self.raw_count} raw images so far...")
+                    # Note: We no longer extract GPS data from raw images
+                
+                else:
+                    self.other_count += 1
+                    self.other_size += file_size
+                    file_type = "other"
+        
+        # Generate results
+        results = self.get_summary_report()
+        return processed_files, results
                 
     def get_summary(self) -> Dict:
         """Return metrics dictionary"""
@@ -365,75 +320,6 @@ class Metrics:
         minutes = float(value[1])
         seconds = float(value[2])
         return degrees + (minutes / 60.0) + (seconds / 3600.0)
-    
-    def _parse_exif_datetime(self, datetime_str: str):
-        """
-        Parse EXIF DateTime format to Python datetime
-        
-        Args:
-            datetime_str: EXIF DateTime string (format: 'YYYY:MM:DD HH:MM:SS')
-        
-        Returns:
-            datetime object or None if parsing fails
-        """
-        try:
-            from datetime import datetime
-            
-            # Check if the string is in the expected format
-            if ":" in datetime_str and " " in datetime_str:
-                # EXIF format: 'YYYY:MM:DD HH:MM:SS'
-                date_part, time_part = datetime_str.split(' ')
-                year, month, day = date_part.split(':')
-                hour, minute, second = time_part.split(':')
-                
-                return datetime(
-                    int(year),
-                    int(month),
-                    int(day),
-                    int(hour),
-                    int(minute),
-                    int(second)
-                )
-            # Handle the format in the filename like 2024-06-27T074938.458700
-            elif "T" in datetime_str and "-" in datetime_str:
-                date_part, time_part = datetime_str.split('T')
-                year, month, day = date_part.split('-')
-                
-                # Handle time part which might contain milliseconds
-                if "." in time_part:
-                    time_part, ms_part = time_part.split('.')
-                    hour = time_part[0:2]
-                    minute = time_part[2:4]
-                    second = time_part[4:6]
-                    
-                    dt = datetime(
-                        int(year),
-                        int(month), 
-                        int(day),
-                        int(hour),
-                        int(minute),
-                        int(second),
-                        int(ms_part.ljust(6, '0')[:6])
-                    )
-                    return dt
-                else:
-                    hour = time_part[0:2]
-                    minute = time_part[2:4]
-                    second = time_part[4:6]
-                    
-                    return datetime(
-                        int(year),
-                        int(month),
-                        int(day),
-                        int(hour),
-                        int(minute),
-                        int(second)
-                    )
-            
-            return None
-        except Exception as e:
-            print(f"Error parsing datetime '{datetime_str}': {e}")
-            return None
     
     @staticmethod
     def format_size(size_bytes: int) -> str:
