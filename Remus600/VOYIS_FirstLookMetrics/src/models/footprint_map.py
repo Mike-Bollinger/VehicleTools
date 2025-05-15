@@ -490,26 +490,37 @@ class FootprintMap:
             
         Returns:
             Path to the saved plot file, or None if no data or error
-        """
+"""
         if not gps_data:
             print("No GPS data available")
             return None
+        
+        # Detect outliers before filtering
+        outliers = self._detect_outliers(gps_data)
+        
+        # Create non-outlier subset for plotting
+        plot_data = [point for point, is_outlier in zip(gps_data, outliers) if not is_outlier]
+        
+        print(f"\nExcluding {sum(outliers)} outlier points from plots (but keeping them in export files)")
+        
+        # Use plot_data for creating the map, but keep original gps_data for exports
+        # Rest of the existing function code, but use plot_data instead of gps_data for plotting
         
         # Load navigation data if provided
         if nav_file_path and os.path.exists(nav_file_path):
             self.load_nav_data(nav_file_path)
         
-        print(f"Processing {len(gps_data)} GPS data points")
+        print(f"Processing {len(plot_data)} GPS data points")
         
         # Debug: Print the keys available in the first few GPS points
-        if gps_data:
-            print("First GPS point keys:", list(gps_data[0].keys()))
+        if plot_data:
+            print("First GPS point keys:", list(plot_data[0].keys()))
         
         # Extract valid points - filter by altitude threshold
         valid_points = []
         filtered_out_count = 0
         
-        for point in gps_data:
+        for point in plot_data:
             # Check if required fields are present
             if not all(key in point for key in ['latitude', 'longitude', 'altitude']):
                 continue
@@ -1838,7 +1849,6 @@ class FootprintMap:
                     q['indices'] = indices
                     q['count'] = len(indices)
                     valid_quadrants.append(q)
-            
             print(f"Identified {len(valid_quadrants)} valid quadrant subsets")
             
             return valid_quadrants
@@ -2284,3 +2294,45 @@ class FootprintMap:
             import traceback
             print(traceback.format_exc())
             return None
+
+    def _detect_outliers(self, points: List[Dict], std_threshold: float = 3.0) -> List[bool]:
+        """
+        Detect outliers in GPS coordinates using the z-score method
+        
+        Args:
+            points: List of dictionaries containing GPS data
+            std_threshold: Number of standard deviations to use as threshold (default: 3.0)
+            
+        Returns:
+            List of boolean values indicating if each point is an outlier
+        """
+        try:
+            # Extract coordinates
+            lats = np.array([p['latitude'] for p in points])
+            lons = np.array([p['longitude'] for p in points])
+            
+            # Calculate z-scores for both latitude and longitude
+            lat_mean = np.mean(lats)
+            lon_mean = np.mean(lons)
+            lat_std = np.std(lats)
+            lon_std = np.std(lons)
+            
+            lat_z_scores = np.abs((lats - lat_mean) / lat_std)
+            lon_z_scores = np.abs((lons - lon_mean) / lon_std)
+            
+            # Mark points as outliers if either latitude or longitude exceeds threshold
+            outliers = (lat_z_scores > std_threshold) | (lon_z_scores > std_threshold)
+            
+            # Log outliers found
+            if any(outliers):
+                print("\nOutliers detected:")
+                for i, (is_outlier, point) in enumerate(zip(outliers, points)):
+                    if is_outlier:
+                        print(f"Point {i}: lat={point['latitude']}, lon={point['longitude']}")
+                        print(f"Z-scores: lat={lat_z_scores[i]:.2f}, lon={lon_z_scores[i]:.2f}")
+            
+            return outliers.tolist()
+            
+        except Exception as e:
+            print(f"Error detecting outliers: {e}")
+            return [False] * len(points)

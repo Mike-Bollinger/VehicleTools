@@ -199,6 +199,7 @@ class Metrics:
     def extract_gps_from_image(self, image_path: str) -> Optional[Dict]:
         """
         Extract GPS information and camera parameters from image EXIF data
+        and/or navigation data
         
         Args:
             image_path: Path to the image file
@@ -214,104 +215,84 @@ class Metrics:
                 # Get image dimensions directly from the image
                 width, height = img.size
                 
-                # Start with base info including dimensions
+                # Start with base info including dimensions and filename
                 result = {
                     'width': width,
-                    'height': height
+                    'height': height,
+                    'filename': os.path.basename(image_path),
+                    'file_path': image_path
                 }
                 
-                # If no EXIF data available, return just the dimensions
-                if not hasattr(img, '_getexif') or img._getexif() is None:
-                    return result
+                # Extract date/time for navigation data matching
+                datetime_str = None
                 
-                # Extract all EXIF data
-                exif_data = {
-                    TAGS.get(tag, tag): value
-                    for tag, value in img._getexif().items()
-                }
-                
-                # Extract camera parameters
-                # ExposureTime
-                if 'ExposureTime' in exif_data:
-                    exposure = exif_data['ExposureTime']
-                    if isinstance(exposure, tuple) and len(exposure) == 2:
-                        result['ExposureTime'] = f"{exposure[0]}/{exposure[1]}"
-                    else:
-                        result['ExposureTime'] = str(exposure)
-                
-                # FNumber
-                if 'FNumber' in exif_data:
-                    fnumber = exif_data['FNumber']
-                    if isinstance(fnumber, tuple) and len(fnumber) == 2:
-                        result['FNumber'] = round(fnumber[0] / fnumber[1], 1)
-                    else:
-                        result['FNumber'] = fnumber
-                
-                # FocalLength
-                if 'FocalLength' in exif_data:
-                    focal = exif_data['FocalLength']
-                    if isinstance(focal, tuple) and len(focal) == 2:
-                        result['FocalLength'] = round(focal[0] / focal[1], 1)
-                    else:
-                        result['FocalLength'] = focal
+                # Extract EXIF data if available
+                if hasattr(img, '_getexif') and img._getexif() is not None:
+                    exif_data = {
+                        TAGS.get(tag, tag): value
+                        for tag, value in img._getexif().items()
+                    }
                     
-                # SubjectDistance
-                if 'SubjectDistance' in exif_data:
-                    distance = exif_data['SubjectDistance']
-                    if isinstance(distance, tuple) and len(distance) == 2:
-                        result['SubjectDistance'] = round(distance[0] / distance[1], 1)
-                    else:
-                        result['SubjectDistance'] = distance
+                    # Extract camera parameters
+                    for tag in ['ExposureTime', 'FNumber', 'FocalLength', 'SubjectDistance']:
+                        if tag in exif_data:
+                            value = exif_data[tag]
+                            if isinstance(value, tuple) and len(value) == 2:
+                                result[tag] = round(value[0] / value[1], 1)
+                            else:
+                                result[tag] = value
                 
-                # DateTime
-                if 'DateTimeOriginal' in exif_data:
-                    result['DateTime'] = exif_data['DateTimeOriginal']
-                elif 'DateTime' in exif_data:
-                    result['DateTime'] = exif_data['DateTime']
+                    # DateTime - extract for navigation matching
+                    for dt_tag in ['DateTimeOriginal', 'DateTime']:
+                        if dt_tag in exif_data and exif_data[dt_tag]:
+                            result['DateTime'] = exif_data[dt_tag]
+                            datetime_str = exif_data[dt_tag]
+                            break
                 
-                # If no GPS info, return what we have so far - camera parameters are valuable even without GPS
-                if 'GPSInfo' not in exif_data:
-                    return result
-                
-                # Process GPS data
-                gps_info = {
-                    GPSTAGS.get(tag, tag): value
-                    for tag, value in exif_data['GPSInfo'].items()
-                }
-                
-                # Extract latitude
-                if 'GPSLatitude' in gps_info and 'GPSLatitudeRef' in gps_info:
-                    lat = self._convert_to_degrees(gps_info['GPSLatitude'])
-                    if gps_info['GPSLatitudeRef'] == 'S':
-                        lat = -lat
-                    result['latitude'] = lat
-                
-                # Extract longitude
-                if 'GPSLongitude' in gps_info and 'GPSLongitudeRef' in gps_info:
-                    lon = self._convert_to_degrees(gps_info['GPSLongitude'])
-                    if gps_info['GPSLongitudeRef'] == 'W':
-                        lon = -lon
-                    result['longitude'] = lon
-                
-                # Extract altitude
-                if 'GPSAltitude' in gps_info:
-                    try:
-                        if isinstance(gps_info['GPSAltitude'], tuple) and len(gps_info['GPSAltitude']) == 2:
-                            altitude = float(gps_info['GPSAltitude'][0]) / float(gps_info['GPSAltitude'][1])
-                        else:
-                            altitude = float(gps_info['GPSAltitude'])
+                # Process GPS data from EXIF if available - GET LAT/LON ONLY
+                if 'GPSInfo' in exif_data:
+                    gps_info = {
+                        GPSTAGS.get(tag, tag): value
+                        for tag, value in exif_data['GPSInfo'].items()
+                    }
+                    
+                    # Extract latitude
+                    if 'GPSLatitude' in gps_info and 'GPSLatitudeRef' in gps_info:
+                        lat = self._convert_to_degrees(gps_info['GPSLatitude'])
+                        if gps_info['GPSLatitudeRef'] == 'S':
+                            lat = -lat
+                        result['latitude'] = lat
+                    
+                    # Extract longitude
+                    if 'GPSLongitude' in gps_info and 'GPSLongitudeRef' in gps_info:
+                        lon = self._convert_to_degrees(gps_info['GPSLongitude'])
+                        if gps_info['GPSLongitudeRef'] == 'W':
+                            lon = -lon
+                        result['longitude'] = lon
+                    
+                    # DO NOT extract altitude from EXIF - Explicitly omit this code
+                # ALWAYS try to get altitude from nav data if available
+                if hasattr(self, 'nav_timestamps'):
+                    # First try with the datetime from EXIF
+                    if datetime_str:
+                        nav_altitude = self.get_altitude_from_nav(datetime_str)
+                        if nav_altitude is not None:
+                            result['altitude'] = nav_altitude
+                            result['altitude_source'] = 'nav'
+                    
+                    # If no match by EXIF time, try filename
+                    if 'altitude' not in result:
+                        nav_altitude = self.get_altitude_from_nav(image_path)
+                        if nav_altitude is not None:
+                            result['altitude'] = nav_altitude
+                            result['altitude_source'] = 'nav'
                             
-                        if 'GPSAltitudeRef' in gps_info and gps_info['GPSAltitudeRef'] == 1:
-                            altitude = -altitude
-                        
-                        result['altitude'] = altitude
-                    except (ValueError, TypeError, ZeroDivisionError):
-                        print(f"Warning: Could not parse altitude value in {image_path}")
-                
                 return result
                 
         except Exception as e:
             print(f"Error extracting data from {image_path}: {e}")
+            import traceback
+            print(traceback.format_exc())
             return None
 
     def _convert_to_degrees(self, value):
@@ -380,3 +361,218 @@ class Metrics:
             "percentile_50": percentile_50,
             "percentile_75": percentile_75
         }
+    
+    def load_nav_data(self, nav_file_path: str) -> bool:
+        """
+        Load navigation data from a text file, extracting altitude data
+        
+        Args:
+            nav_file_path: Path to the navigation file
+            
+        Returns:
+            Boolean indicating success
+        """
+        try:
+            print(f"Loading navigation data from {nav_file_path}")
+            if not os.path.exists(nav_file_path):
+                print(f"Navigation file not found: {nav_file_path}")
+                return False
+            
+            # Store nav file path for reference
+            self.nav_file_path = nav_file_path
+            
+            # Initialize nav data storage
+            self.nav_timestamps = []
+            
+            # Read the navigation file
+            with open(nav_file_path, 'r') as f:
+                lines = f.readlines()
+                
+            # Skip header lines (first two lines typically)
+            data_lines = lines[2:]
+            
+            total_entries = 0
+            for line in data_lines:
+                try:
+                    # Skip empty lines
+                    if not line.strip():
+                        continue
+                        
+                    # Split the line by commas
+                    parts = line.strip().split(',')
+                    
+                    # Check if we have enough parts for time, date, and altitude
+                    if len(parts) >= 4:
+                        # Format: "HH:MM:SS.SSS", "MM/DD/YYYY", "Lat/Lon", "Altitude"
+                        time_str = parts[0].strip()
+                        date_str = parts[1].strip()
+                        lon_lat_str = parts[2].strip()
+                        altitude_str = parts[3].strip()
+                        
+                        # Combine date and time
+                        timestamp = self._parse_nav_datetime(date_str, time_str)
+                        
+                        if timestamp:
+                            try:
+                                altitude = float(altitude_str)
+                                # Store timestamp and altitude as a tuple for direct comparison
+                                self.nav_timestamps.append((timestamp, altitude))
+                                total_entries += 1
+                            except ValueError:
+                                print(f"Invalid altitude value: {altitude_str}")
+                                
+                except Exception as e:
+                    print(f"Error parsing navigation line: {str(e)}")
+                    continue
+            
+            print(f"Loaded {total_entries} altitude points from navigation file")
+            
+            # Sort timestamps chronologically for faster searching
+            if self.nav_timestamps:
+                self.nav_timestamps.sort(key=lambda x: x[0])
+                
+            return total_entries > 0
+                
+        except Exception as e:
+            print(f"Error loading navigation data: {e}")
+            import traceback
+            print(traceback.format_exc())
+            return False
+
+    def _parse_nav_datetime(self, date_str, time_str):
+        """
+        Parse navigation timestamp from separate date and time strings
+        
+        Args:
+            date_str: Date string in format MM/DD/YYYY
+            time_str: Time string in format HH:MM:SS.SSS
+            
+        Returns:
+            Datetime object or None if parsing failed
+        """
+        try:
+            import datetime
+            
+            # Clean up the strings
+            date_str = date_str.strip()
+            time_str = time_str.strip()
+            
+            # Parse date components
+            month, day, year = map(int, date_str.split('/'))
+            
+            # Parse time components
+            if '.' in time_str:  # Has milliseconds
+                time_parts = time_str.split('.')
+                hour, minute, second = map(int, time_parts[0].split(':'))
+                millisecond = int(time_parts[1])
+                microsecond = millisecond * 1000  # Convert to microseconds
+            else:
+                hour, minute, second = map(int, time_str.split(':'))
+                microsecond = 0
+                
+            # Create datetime object
+            dt = datetime.datetime(year, month, day, hour, minute, second, microsecond)
+            return dt
+                
+        except Exception as e:
+            print(f"Error parsing nav datetime - date: {date_str}, time: {time_str}, error: {e}")
+            return None
+
+    def get_altitude_from_nav(self, image_path_or_timestamp):
+        """
+        Get altitude from navigation data based on image path or timestamp
+        
+        Args:
+            image_path_or_timestamp: Image path or timestamp string
+            
+        Returns:
+            Altitude value or None if no match found
+        """
+        if not hasattr(self, 'nav_timestamps') or not self.nav_timestamps:
+            return None
+            
+        try:
+            import datetime
+            from dateutil import parser
+        except ImportError as e:
+            print(f"Required modules not available: {e}")
+            return None
+        from pathlib import Path
+        
+        # If we're passed a full path, extract the filename
+        if isinstance(image_path_or_timestamp, str) and ('\\' in image_path_or_timestamp or '/' in image_path_or_timestamp):
+            filename = Path(image_path_or_timestamp).name
+        else:
+            filename = image_path_or_timestamp
+        
+        # First try to parse it as a timestamp directly
+        dt = None
+        if isinstance(filename, str):
+            # Try to extract timestamp from VOYIS filename pattern
+            # Example: ESC_stills_processed_PPS_2024-06-27T074938.458700_2170.jpg
+            if 'T' in filename and '_' in filename:
+                try:
+                    parts = filename.split('_')
+                    # Look for the part with a T in it
+                    for part in parts:
+                        if 'T' in part:
+                            # Format: 2024-06-27T074938.458700
+                            date_part, time_part = part.split('T')
+                            
+                            # Handle time with or without milliseconds
+                            if '.' in time_part:
+                                time_base = time_part.split('.')[0]
+                            else:
+                                time_base = time_part
+                                
+                            # Format time with proper separators (HH:MM:SS)
+                            if len(time_base) >= 6:  # At least HHMMSS
+                                hours = time_base[0:2]
+                                minutes = time_base[2:4]
+                                seconds = time_base[4:6]
+                                formatted_time = f"{hours}:{minutes}:{seconds}"
+                                dt = parser.parse(f"{date_part} {formatted_time}")
+                                break
+                except Exception as e:
+                    # Try direct parsing if filename processing failed
+                    try:
+                        dt = parser.parse(filename)
+                    except:
+                        dt = None
+        
+            # Direct timestamp parsing if format extraction failed
+            if dt is None and isinstance(filename, str) and (':' in filename or '-' in filename):
+                try:
+                    dt = parser.parse(filename)
+                except:
+                    dt = None
+        
+            # If we have a datetime object, find the closest match in navigation data
+            if dt:
+                # Find closest timestamp within tolerance (3 seconds)
+                tolerance_seconds = 3.0  # Set to 3 seconds as requested
+                tolerance = datetime.timedelta(seconds=tolerance_seconds)
+                closest_timestamp = None
+                closest_altitude = None
+                closest_diff = tolerance
+                
+                for timestamp, altitude in self.nav_timestamps:
+                    diff = abs(timestamp - dt)
+                    
+                    # If this timestamp is closer than our previous best match
+                    if diff < closest_diff:
+                        closest_diff = diff
+                        closest_timestamp = timestamp
+                        closest_altitude = altitude
+                        
+                        # If very close match, we can stop early
+                        if diff.total_seconds() < 0.1:
+                            break
+                
+                # Only return if within tolerance
+                if closest_timestamp and closest_diff <= tolerance:
+                    return closest_altitude
+                
+            # If we get here, no altitude was found
+            return None
+

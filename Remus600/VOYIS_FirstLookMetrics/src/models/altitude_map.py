@@ -8,6 +8,7 @@ import warnings
 # Try importing geopandas, but handle the case where it might not be installed
 try:
     import geopandas as gpd
+    import pandas as pd
     from shapely.geometry import Point
     GEOPANDAS_AVAILABLE = True
 except ImportError:
@@ -22,42 +23,74 @@ class AltitudeMap:
     
     def set_altitude_thresholds(self, high_threshold: float, low_threshold: float = None) -> None:
         """
-        Set the thresholds for altitude coloring
+        Set the altitude thresholds for altitude classification
         
         Args:
-            high_threshold: High altitude threshold in meters
-            low_threshold: Optional low altitude threshold in meters
+            high_threshold: Upper threshold for altitude classification
+            low_threshold: Lower threshold for altitude classification (default: high_threshold/2)
         """
         self.altitude_threshold = high_threshold
         if low_threshold is not None:
             self.low_altitude_threshold = low_threshold
+        else:
+            # Default low threshold is half of high threshold
+            self.low_altitude_threshold = high_threshold / 2.0
     
-    def create_location_map(self, gps_data: List[Dict], output_path: str, filename: str = "image_locations_map.png", metrics=None) -> Optional[str]:
-        """
-        Create a scatter plot of image locations colored by altitude
+    def _detect_outliers(self, gps_data: List[Dict], std_threshold: float = 3.0) -> List[bool]:
+        """Same outlier detection logic as FootprintMap"""
+        if not gps_data or len(gps_data) < 2:
+            return [False] * len(gps_data)
         
-        Args:
-            gps_data: List of dictionaries with latitude, longitude, altitude, and file_type
-            output_path: Directory to save the plot
-            filename: Filename for the generated map
-            metrics: Optional Metrics object to use for statistics
-            
-        Returns:
-            Path to the saved plot file, or None if no data or error
-        """
+        # Extract latitude, longitude, and altitude for all points
+        lats = np.array([point['latitude'] for point in gps_data])
+        lons = np.array([point['longitude'] for point in gps_data])
+        alts = np.array([point['altitude'] for point in gps_data])
+        
+        # Calculate mean and standard deviation for altitude
+        alt_mean = np.mean(alts)
+        alt_std = np.std(alts)
+        
+        # Detect outliers based on altitude z-score
+        altitude_outliers = np.abs((alts - alt_mean) / alt_std) > std_threshold
+        
+        # For latitude and longitude, we can use a simple range check based on IQR
+        lat_q1, lat_q3 = np.percentile(lats, [25, 75])
+        lon_q1, lon_q3 = np.percentile(lons, [25, 75])
+        lat_iqr = lat_q3 - lat_q1
+        lon_iqr = lon_q3 - lon_q1
+        
+        # Define bounds for latitude and longitude (1.5*IQR rule)
+        lat_lower_bound = lat_q1 - 1.5 * lat_iqr
+        lat_upper_bound = lat_q3 + 1.5 * lat_iqr
+        lon_lower_bound = lon_q1 - 1.5 * lon_iqr
+        lon_upper_bound = lon_q3 + 1.5 * lon_iqr
+        
+        # Detect spatial outliers
+        spatial_outliers = (lats < lat_lower_bound) | (lats > lat_upper_bound) | \
+                           (lons < lon_lower_bound) | (lons > lon_upper_bound)
+        
+        # Combine altitude and spatial outliers
+        combined_outliers = altitude_outliers | spatial_outliers
+        
+        return combined_outliers.tolist()
+    
+    def create_location_map(self, gps_data: List[Dict], output_path: str, 
+                       filename: str = "image_locations_map.png",
+                       metrics=None) -> Optional[str]:
+        """Modified version with outlier handling"""
         if not gps_data:
             return None
         
-        # Extract data for plotting, ensuring all required fields exist
-        valid_points = []
-        for point in gps_data:
-            if all(key in point for key in ['latitude', 'longitude', 'altitude']):
-                valid_points.append(point)
-                
-        if not valid_points:
-            print("No valid GPS points found for plotting")
-            return None
+        # Detect outliers
+        outliers = self._detect_outliers(gps_data)
         
+        # Create non-outlier subset for plotting
+        plot_data = [point for point, is_outlier in zip(gps_data, outliers) if not is_outlier]
+        
+        print(f"\nExcluding {sum(outliers)} outlier points from plots (but keeping them in export files)")
+        
+        # Use plot_data for visualization but keep original data for exports
+        # Rest of the existing function code, but use plot_data instead of gps_data for plotting
         try:
             # Set up matplotlib for non-interactive use
             import matplotlib
@@ -67,9 +100,9 @@ class AltitudeMap:
             fig, ax = plt.subplots(figsize=(10, 8))
             
             # Extract coordinates and altitudes
-            lats = [p['latitude'] for p in valid_points]
-            lons = [p['longitude'] for p in valid_points]
-            alts = [p['altitude'] for p in valid_points]
+            lats = [p['latitude'] for p in plot_data]
+            lons = [p['longitude'] for p in plot_data]
+            alts = [p['altitude'] for p in plot_data]
             
             # Use class variable for low altitude threshold
             low_altitude_threshold = self.low_altitude_threshold
@@ -149,19 +182,19 @@ class AltitudeMap:
             return None
     
     def create_altitude_histogram(self, gps_data: List[Dict], output_path: str, 
-                           filename: str = "altitude_histogram.png",
-                           max_display_altitude: float = 50.0) -> Optional[str]:
+                         filename: str = "altitude_histogram.png",
+                         max_display_altitude: float = 50.0) -> Optional[str]:
         """
-        Create a histogram of image altitudes with a broken y-axis
+        Create a histogram of image altitudes
         
         Args:
-            gps_data: List of dictionaries with GPS data
-            output_path: Directory to save the output files
+            gps_data: List of dictionaries with altitude data
+            output_path: Directory to save the plot
             filename: Filename for the generated histogram
-            max_display_altitude: Maximum altitude to display (m), higher values are excluded
+            max_display_altitude: Maximum altitude to display (higher values are clipped)
             
         Returns:
-            Path to the saved plot file, or None if no data or error
+            Path to the saved histogram file, or None if no data or error
         """
         if not gps_data:
             return None
@@ -339,31 +372,37 @@ class AltitudeMap:
             return None
     
     def export_to_gis_formats(self, gps_data: List[Dict], output_path: str, 
-                             csv_filename: str = "image_locations.csv",
-                             shapefile_filename: str = "image_locations.shp") -> Dict[str, str]:
+                      csv_filename: str = "image_locations.csv",
+                      shapefile_filename: str = "image_locations.shp") -> Dict[str, str]:
         """
         Export GPS data to CSV and shapefile formats
         """
         result_files = {}
-        
+    
         # Add this at the start of the function for debugging
         print("\n--- STARTING CSV EXPORT ---")
-        
+    
         try:
-            # Filter out points with no latitude/longitude
-            valid_points = [p for p in gps_data if 'latitude' in p and 'longitude' in p]
+            # Filter out points with no latitude/longitude or no navigation altitude
+            valid_points = [p for p in gps_data if 
+                           'latitude' in p and 'longitude' in p and 
+                           'altitude' in p and 
+                           (not 'altitude_source' in p or p['altitude_source'] == 'nav')]
             
             if not valid_points:
-                print("No valid GPS points to export")
+                print("No valid GPS points with navigation altitude data to export")
                 return result_files
-            
+                
             # Clean up attribute names and handle nested data
             valid_points_cleaned = []
             for point in valid_points:
                 point_copy = point.copy()
                 
-                # Add altitude classification
+                # Ensure altitude_source is set to 'nav' for consistency
                 if 'altitude' in point:
+                    point_copy['altitude_source'] = 'nav'
+                    
+                    # Add altitude classification
                     if point['altitude'] < self.low_altitude_threshold:
                         point_copy['altitude_class'] = 'Too low'
                     elif point['altitude'] < self.altitude_threshold:
@@ -385,7 +424,7 @@ class AltitudeMap:
                     # If we've made the copy, remove the original to avoid duplication
                     if 'height' in point_copy and 'height' != 'ImageHeight':
                         del point_copy['height']
-                    
+                
                 # Extract EXIF data if it's nested
                 if 'exif' in point and isinstance(point['exif'], dict):
                     for key, value in point['exif'].items():

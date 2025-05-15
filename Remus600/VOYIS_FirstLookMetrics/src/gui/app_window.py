@@ -5,6 +5,7 @@ import threading
 import builtins
 from tkinter import scrolledtext
 from typing import Optional
+import traceback
 from models.metrics import Metrics
 from models.altitude_map import GEOPANDAS_AVAILABLE, AltitudeMap
 from src.models.footprint_map import FootprintMap
@@ -43,8 +44,8 @@ class AppWindow:
         self.location_map_var = tk.BooleanVar(value=True)
         self.histogram_var = tk.BooleanVar(value=True)
         self.footprint_map_var = tk.BooleanVar(value=True)
-        self.visibility_analyzer_var = tk.BooleanVar(value=True)  # Changed to True
-        self.highlight_selector_var = tk.BooleanVar(value=True)  # Changed to True
+        self.visibility_analyzer_var = tk.BooleanVar(value=True)
+        self.highlight_selector_var = tk.BooleanVar(value=True)
         self.nav_path = tk.StringVar()
         self.threshold_var = tk.StringVar(value="8.0")  # String for text entry
         self.batch_mode = False
@@ -86,9 +87,6 @@ class AppWindow:
         # Then create the rest of the UI
         self.create_input_section()
         self.create_functions_section()
-        
-        # Make sure the navigation file selection is visible if footprint map is checked by default
-        self.update_nav_file_visibility()
 
     def create_frames(self):
         """Create the main frames for the application with scrolling support"""
@@ -182,17 +180,14 @@ class AppWindow:
         self.location_map_var.set(state)
         self.histogram_var.set(state)
         self.footprint_map_var.set(state)
-        self.visibility_analyzer_var.set(state)  # Added this line
-        self.highlight_selector_var.set(state)   # Added this line
-        
-        # Update UI based on new state
-        self.update_nav_file_visibility()
+        self.visibility_analyzer_var.set(state)
+        self.highlight_selector_var.set(state)
         
         # Show/hide visibility options based on checkbox state
         if state:
-            self.toggle_visibility_options()  # Make sure visibility options appear if checked
+            self.toggle_visibility_options()
         else:
-            self.visibility_model_frame.grid_remove()  # Hide when unchecked
+            self.visibility_model_frame.grid_remove()
 
     def update_all_checkbox(self):
         """Update 'All Functions' checkbox based on individual checkboxes"""
@@ -200,15 +195,12 @@ class AppWindow:
                 self.location_map_var.get(), 
                 self.histogram_var.get(), 
                 self.footprint_map_var.get(),
-                self.visibility_analyzer_var.get(),  # Added this line
-                self.highlight_selector_var.get()    # Added this line
+                self.visibility_analyzer_var.get(),
+                self.highlight_selector_var.get()
                ]):
             self.all_var.set(True)
         else:
             self.all_var.set(False)
-        
-        # Show/hide nav file selection based on footprint map checkbox
-        self.update_nav_file_visibility()
 
     def select_input_folder(self):
         folder_path = filedialog.askdirectory(title="Select Input Folder")
@@ -261,21 +253,12 @@ class AppWindow:
                 self.log_message(f"Visibility training data directory set to: {folder_path}")
 
     def update_nav_file_visibility(self):
-        """Show or hide navigation file selection based on footprint map checkbox"""
-        if self.footprint_map_var.get():
-            self.nav_file_frame.grid()
-        else:
-            self.nav_file_frame.grid_remove()
+        """Navigation file is now always visible in the input section"""
+        pass
 
     def toggle_nav_options(self):
-        """Show or hide nav file options based on checkbox state"""
-        if self.footprint_map_var.get():
-            self.nav_file_frame.grid()
-            # Don't affect the visibility options by resizing
-        else:
-            self.nav_file_frame.grid_remove()
-        
-        self.update_all_checkbox()
+        """Navigation file is now always visible in the input section"""
+        pass
 
     def toggle_visibility_options(self):
         """Show or hide visibility model options based on checkbox state"""
@@ -317,36 +300,67 @@ class AppWindow:
         self.root.update_idletasks()
         
     def process_images(self):
-        """Process images with selected functions"""
+        """Main function to process images based on selected options"""
         if self.batch_mode:
-            # Run in batch mode
+            # Use batch processing
             self.process_batch()
-        else:
-            # Original single processing mode
-            input_path = self.input_path.get()
-            output_path = self.output_path.get()
+            return
             
-            if not input_path or not os.path.exists(input_path):
-                messagebox.showerror("Error", "Please select a valid input folder.")
-                return
+        # Single mode processing
+        input_folder = self.input_path.get()
+        output_folder = self.output_path.get()
+        
+        if not input_folder or not os.path.isdir(input_folder):
+            messagebox.showerror("Error", "Please select a valid input folder.")
+            return
+            
+        if not output_folder:
+            messagebox.showerror("Error", "Please select an output folder.")
+            return
+            
+        # Create output folder if it doesn't exist
+        os.makedirs(output_folder, exist_ok=True)
+        
+        # Log the start of processing
+        self.log_message(f"Processing images from {input_folder}")
+        self.log_message(f"Output folder: {output_folder}")
+        
+        # Process images
+        try:
+            self.analyze_images(input_folder, output_folder)
+            
+            # Show completion message
+            self.log_message("\nAll selected processing tasks completed successfully.")
+            self.update_progress(100, "Processing complete!")
+            
+            # Play completion sound
+            try:
+                # Try using winsound first
+                try:
+                    import winsound
+                    sound_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                            "utils", "sounds", "beer_open.wav")
+                    if os.path.exists(sound_path):
+                        winsound.PlaySound(sound_path, winsound.SND_FILENAME)
+                    else:
+                        # Fall back to mp3 with os.system
+                        sound_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                                "utils", "sounds", "beer_open.mp3")
+                        if os.path.exists(sound_path):
+                            os.system(f'start "" "{sound_path}"')
+                except Exception as sound_err:
+                    # Fall back to original method
+                    sound_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                            "utils", "sounds", "beer_open.mp3")
+                    if os.path.exists(sound_path):
+                        os.system(f'start "" "{sound_path}"')
+            except Exception as e:
+                print(f"Could not play sound: {str(e)}")
                 
-            if not output_path:
-                messagebox.showerror("Error", "Please select an output folder.")
-                return
-                
-            # Disable the process button during processing
-            self.process_button.configure(state=tk.DISABLED)
-            
-            # Set both thresholds in the AltitudeMap object
-            self.altitude_map.set_altitude_thresholds(self.altitude_threshold, self.low_altitude_threshold)
-            
-            # Start a thread for processing
-            thread = threading.Thread(
-                target=self.analyze_images,
-                args=(input_path, output_path)
-            )
-            thread.daemon = True
-            thread.start()
+        except Exception as e:
+            self.log_message(f"\nError during processing: {str(e)}")
+            self.update_progress(0, "Error during processing")
+            traceback.print_exc()
 
     def analyze_images(self, input_folder, output_folder):
         """Process images based on selected functions"""
@@ -355,17 +369,41 @@ class AppWindow:
             
             # Update the threshold from the entry field
             try:
-                altitude_threshold = float(self.threshold_var.get())
-                self.altitude_threshold = altitude_threshold
+                new_threshold = float(self.threshold_var.get())
+                self.altitude_threshold = new_threshold
                 
-                # Update threshold in all components
-                self.metrics.altitude_threshold = altitude_threshold
-                self.altitude_map.set_altitude_thresholds(altitude_threshold, 4.0)  # Keep low threshold at 4m
-                
-                self.log_message(f"Using altitude threshold: {altitude_threshold:.1f}m")
+                # Update all components with the new threshold
+                self.metrics.altitude_threshold = new_threshold
+                self.altitude_map.set_altitude_thresholds(new_threshold, self.low_altitude_threshold)
+                self.footprint_map.altitude_threshold = new_threshold
+                if hasattr(self, 'visibility_analyzer'):
+                    self.visibility_analyzer.altitude_threshold = new_threshold
             except ValueError:
-                self.log_message(f"Using default altitude threshold: {self.altitude_threshold:.1f}m")
+                self.log_message(f"Invalid threshold value. Using default: {self.altitude_threshold}")
             
+            # Load navigation data first if provided - this is used by multiple functions
+            nav_path = self.nav_path.get()
+            if nav_path and os.path.exists(nav_path):
+                self.log_message(f"Loading navigation data from: {nav_path}")
+                self.update_progress(5, "Loading navigation data...")
+                
+                # Load navigation data into metrics object for altitude information
+                if self.metrics.load_nav_data(nav_path):
+                    self.log_message("Navigation data loaded successfully for altitude extraction")
+                    self.log_message("NOTE: Using ONLY navigation data for altitude values, EXIF altitude data is ignored")
+                    
+                    # Make the nav data available to other components
+                    if hasattr(self.metrics, 'nav_timestamps'):
+                        self.altitude_map.nav_timestamps = self.metrics.nav_timestamps
+                        self.footprint_map.nav_timestamps = self.metrics.nav_timestamps
+                        
+                        if hasattr(self, 'visibility_analyzer'):
+                            self.visibility_analyzer.nav_timestamps = self.metrics.nav_timestamps
+                        if hasattr(self, 'highlight_selector'):
+                            self.highlight_selector.nav_timestamps = self.metrics.nav_timestamps
+                else:
+                    self.log_message("Warning: Failed to load navigation data for altitude extraction")
+        
             # Determine if we need to extract GPS data
             extract_gps = self.location_map_var.get() or self.histogram_var.get() or self.footprint_map_var.get() or self.visibility_analyzer_var.get()
             
@@ -490,65 +528,40 @@ class AppWindow:
             
             # STAGE 3: Footprint and Overlap Analysis
             if self.footprint_map_var.get():
-                self.log_message("\nSTAGE 3: Creating image footprint map and overlap analysis...")
+                self.log_message("\nSTAGE 3: Creating image footprints and overlap maps...")
+                self.update_progress(60, "Creating image footprints and overlap maps...")
                 
-                if not self.metrics.gps_data:
-                    self.log_message("Warning: No GPS data found in images. Cannot create footprint map.")
-                else:
-                    try:
-                        nav_file = self.nav_path.get() if self.nav_path.get() and os.path.exists(self.nav_path.get()) else None
-                        
-                        if not nav_file:
-                            self.log_message("Warning: No navigation file selected or file not found. Using default heading.")
-                        else:
-                            self.log_message(f"Using navigation data from: {nav_file}")
+                try:
+                    # Pass the same navigation data to footprint map
+                    nav_path = self.nav_path.get()
+                    self.footprint_map.altitude_threshold = self.altitude_threshold
                     
-                        self.log_message(f"Generating footprint map with {len(self.metrics.gps_data)} images (altitude threshold: {self.altitude_threshold:.1f}m)...")
+                    footprint_map_path = self.footprint_map.create_footprint_map(
+                        self.metrics.gps_data, 
+                        output_folder,
+                        nav_file_path=nav_path,  # Use the nav path from the input section
+                        filename="image_footprints_map.png"
+                    )
+                    
+                    if footprint_map_path:
+                        self.log_message(f"Image footprint map created: {footprint_map_path}")
                         
-                        # SAFE way to capture print output without recursion error:
-                        # Use StringIO instead of redefining print
-                        import io
-                        import contextlib
-                        
-                        # Create a StringIO object to capture print output
-                        f = io.StringIO()
-                        with contextlib.redirect_stdout(f):
-                            # Generate the footprint map
-                            map_file = self.footprint_map.create_footprint_map(
-                                self.metrics.gps_data,
-                                output_folder,
-                                nav_file_path=nav_file
-                            )
-                        
-                        # Log the captured output (split by lines)
-                        for line in f.getvalue().splitlines():
-                            if line.strip():  # Only log non-empty lines
-                                self.log_message(line)
-                        
-                        # Transfer overlap stats
+                        # Copy overlap stats from footprint map to metrics for report generation
                         if hasattr(self.footprint_map, 'vertical_overlap_stats'):
                             self.metrics.vertical_overlap_stats = self.footprint_map.vertical_overlap_stats
-                            
                         if hasattr(self.footprint_map, 'horizontal_overlap_stats'):
                             self.metrics.horizontal_overlap_stats = self.footprint_map.horizontal_overlap_stats
-                            
                         if hasattr(self.footprint_map, 'overall_overlap_stats'):
                             self.metrics.overall_overlap_stats = self.footprint_map.overall_overlap_stats
-                        
-                        # Append updated metrics with overlap information to the metrics file
-                        self.append_overlap_metrics_to_file(output_folder)
-                        
-                        # Log results
-                        if map_file:
-                            self.log_message(f"Footprint map saved to: {map_file}")
-                            self.log_message("CSV and shapefile with footprint data also created in the same folder.")
-                        else:
-                            self.log_message("Error: Could not create footprint map.")
                             
-                    except Exception as e:
-                        self.log_message(f"Error creating footprint map: {str(e)}")
-                        import traceback
-                        self.log_message(traceback.format_exc())
+                        # Append overlap metrics to the metrics file
+                        self.append_overlap_metrics_to_file(output_folder)
+                    else:
+                        self.log_message("Failed to create footprint map")
+                        
+                except Exception as e:
+                    self.log_message(f"Error creating footprint map: {str(e)}")
+                    self.log_message(traceback.format_exc())
             
             # STAGE 4: Visibility Analysis (last step)
             if self.visibility_analyzer_var.get():
@@ -819,29 +832,31 @@ class AppWindow:
         self.output_button = ttk.Button(output_frame, text="Browse...", command=self.select_output_folder)
         self.output_button.grid(row=0, column=2)
         
-        # Add batch mode toggle button
+        # Navigation file selection - moved here from functions section
+        self.nav_path = tk.StringVar()
+        nav_frame = ttk.Frame(self.input_frame)
+        nav_frame.grid(row=2, column=0, sticky='ew', pady=2)
+        
+        ttk.Label(nav_frame, text="Vehicle Nav File:").grid(row=0, column=0, sticky='w')
+        self.nav_entry = ttk.Entry(nav_frame, textvariable=self.nav_path, width=40)
+        self.nav_entry.grid(row=0, column=1, padx=5, sticky='ew')
+        self.nav_button = ttk.Button(nav_frame, text="Browse...", command=self.select_nav_file)
+        self.nav_button.grid(row=0, column=2)
+        
+        # Add batch mode toggle button - moved to row 3
         self.batch_button = ttk.Button(
             self.input_frame,
             text="Switch to Batch Mode",
             command=self.toggle_batch_mode
         )
-        self.batch_button.grid(row=2, column=0, columnspan=3, pady=(10, 0))
+        self.batch_button.grid(row=3, column=0, columnspan=3, pady=(10, 0))
 
     def create_functions_section(self):
         """Create the functions selection checkbox widgets"""
-        # "All Functions" checkbox
-        self.all_var = tk.BooleanVar(value=True)
-        self.basic_metrics_var = tk.BooleanVar(value=True)
-        self.location_map_var = tk.BooleanVar(value=True)
-        self.histogram_var = tk.BooleanVar(value=True)
-        self.footprint_map_var = tk.BooleanVar(value=True)
-        self.visibility_analyzer_var = tk.BooleanVar(value=True)
-        self.highlight_selector_var = tk.BooleanVar(value=True)
-
-        # We'll use this to track the row for dynamic positioning
+        # Initialize the current row counter
         self.current_row = 0
         
-        # Analysis Functions section
+        # "All Functions" checkbox
         self.all_check = ttk.Checkbutton(
             self.functions_frame,
             text="All Functions",
@@ -881,30 +896,17 @@ class AppWindow:
         
         self.footprint_map_check = ttk.Checkbutton(
             self.functions_frame,
-            text="Image Footprint and Overlap Maps (Requires Vehicle Navigation File)",
+            text="Image Footprint and Overlap Maps",
             variable=self.footprint_map_var,
             command=self.update_all_checkbox
         )
         self.footprint_map_check.grid(row=self.current_row, column=0, sticky='w', padx=25, pady=2)
         self.current_row += 1
         
-        # Add a frame for nav file selection that appears when footprint map is selected
-        self.nav_file_frame = ttk.Frame(self.functions_frame)
-        self.nav_file_frame.grid(row=self.current_row, column=0, sticky='w', padx=45, pady=(0, 5))
-        self.nav_file_frame.grid_remove()  # Hide it initially
-        self.nav_file_row = self.current_row
-        self.current_row += 1
-        
-        ttk.Label(self.nav_file_frame, text="Vehicle Navigation File:").grid(row=0, column=0, sticky='w', padx=(0, 5))
-        self.nav_entry = ttk.Entry(self.nav_file_frame, textvariable=self.nav_path, width=40)
-        self.nav_entry.grid(row=0, column=1, padx=(5, 5), sticky='ew')
-        self.nav_button = ttk.Button(self.nav_file_frame, text="Browse...", command=self.select_nav_file)
-        self.nav_button.grid(row=0, column=2)
-        
-        # Add visibility analyzer checkbox
+        # Visibility analyzer checkbox
         self.visibility_analyzer_check = ttk.Checkbutton(
             self.functions_frame,
-            text="Analyze Image Visibility",
+            text="Image Visibility Analysis",
             variable=self.visibility_analyzer_var,
             command=self.toggle_visibility_options
         )
@@ -1297,6 +1299,7 @@ The visibility categories represent:
             # Store current values before hiding
             self.stored_input_path = self.input_path.get()
             self.stored_output_path = self.output_path.get()
+            self.stored_nav_path = self.nav_path.get()  # Add this line
             
             # Hide the elements
             self.input_entry.grid_remove()
@@ -1306,6 +1309,11 @@ The visibility categories represent:
             self.output_entry.grid_remove()
             self.output_button.grid_remove()
         
+        # Hide nav file selection elements
+        if hasattr(self, 'nav_entry'):
+            self.nav_entry.grid_remove()
+            self.nav_button.grid_remove()
+    
         # Create batch processing frame if it doesn't exist
         if not hasattr(self, 'batch_frame'):
             self.batch_frame = ttk.LabelFrame(self.input_frame, text="Batch Processing")
@@ -1365,6 +1373,8 @@ The visibility categories represent:
                 self.input_path.set(self.stored_input_path)
             if hasattr(self, 'stored_output_path'):
                 self.output_path.set(self.stored_output_path)
+            if hasattr(self, 'stored_nav_path'):  # Add this block
+                self.nav_path.set(self.stored_nav_path)
                 
             # Make elements visible again
             self.input_entry.grid()
@@ -1374,6 +1384,11 @@ The visibility categories represent:
             self.output_entry.grid()
             self.output_button.grid()
         
+        # Show nav file selection elements
+        if hasattr(self, 'nav_entry'):
+            self.nav_entry.grid()
+            self.nav_button.grid()
+    
         # Reset process button text
         self.process_button.configure(text="Process Images")
 
@@ -1450,7 +1465,16 @@ The visibility categories represent:
                     
                 if not messagebox.askyesno("Missing Input Folders", msg + "\n\nDo you want to continue anyway?"):
                     return
-            
+
+            # Check nav files if column exists and required for selected functions
+            if (self.footprint_map_var.get() or self.location_map_var.get()) and 'Nav_File_Path' not in df.columns:
+                messagebox.showwarning(
+                    "Nav File Required",
+                    "Navigation file path column (Nav_File_Path) is missing from CSV.\n"
+                    "This is required for location maps and footprint analysis."
+                )
+                return
+
             # Prepare output directories
             for output_path in df['Output_Path']:
                 os.makedirs(output_path, exist_ok=True)
@@ -1481,41 +1505,30 @@ The visibility categories represent:
             self.log_message(f"Starting batch processing of {total_rows} folders...")
             
             for index, row in df.iterrows():
-                input_path = row['Input_Path']
-                output_path = row['Output_Path']
-                
-                # Get nav file if it exists in the CSV
-                nav_file = None
-                if 'Nav_File_Path' in row and not pd.isna(row['Nav_File_Path']):
-                    nav_file = row['Nav_File_Path']
-                    if os.path.exists(nav_file):
-                        self.nav_path.set(nav_file)
-                    else:
-                        self.log_message(f"Warning: Navigation file not found: {nav_file}")
-                        self.nav_path.set("")
-                else:
-                    self.nav_path.set("")
-                
-                # Log start of current batch
-                self.log_message(f"\n{'=' * 40}")
-                self.log_message(f"Processing batch {index+1}/{total_rows}")
-                self.log_message(f"Input: {input_path}")
-                self.log_message(f"Output: {output_path}")
-                if nav_file:
-                    self.log_message(f"Nav file: {nav_file}")
-                
-                # Process this batch
                 try:
-                    # Reset any residual state between runs
+                    self.log_message(f"\nProcessing entry {index + 1} of {total_rows}")
+                    self.log_message(f"Input: {row['Input_Path']}")
+                    self.log_message(f"Output: {row['Output_Path']}")
+                    
+                    # Reset analysis state for this run
                     self.reset_analysis_state()
                     
-                    # Run the analysis for this batch
-                    self.analyze_images(input_path, output_path)
-                    self.log_message(f"Completed batch {index+1}/{total_rows}")
+                    # Set paths for this batch entry
+                    self.input_path.set(row['Input_Path'])
+                    self.output_path.set(row['Output_Path'])
+                    
+                    # Set nav path if available in CSV
+                    if 'Nav_File_Path' in df.columns:
+                        self.nav_path.set(row['Nav_File_Path'])
+                    else:
+                        self.nav_path.set('')  # Clear nav path if not in CSV
+                
+                    # Process this entry
+                    self.analyze_images(row['Input_Path'], row['Output_Path'])
+                
                 except Exception as e:
-                    self.log_message(f"Error in batch {index+1}: {str(e)}")
-                    import traceback
-                    self.log_message(traceback.format_exc())
+                    self.log_message(f"Error processing entry {index + 1}: {str(e)}")
+                    continue  # Continue with next entry even if this one fails
             
             # Re-enable the process button
             self.master.after(0, lambda: self.process_button.configure(state=tk.NORMAL))
@@ -1650,5 +1663,49 @@ The visibility categories represent:
         except Exception as e:
             print(f"Error playing completion sound: {str(e)}")
             self.log_message("Processing complete!")
+    
+    def log_metrics_summary(self, metrics):
+        """Log a summary of image metrics"""
+        try:
+            # Get image counts and size stats
+            image_counts = metrics.get_image_counts()
+            
+            # Format file sizes as human-readable
+            processed_size_str = self.format_file_size(image_counts.get('processed_size', 0))
+            raw_size_str = self.format_file_size(image_counts.get('raw_size', 0))
+            other_size_str = self.format_file_size(image_counts.get('other_size', 0))
+            total_size_str = self.format_file_size(image_counts.get('total_size', 0))
+            
+            # Log image counts and sizes
+            self.log_message("Image Analysis Summary:")
+            self.log_message("-----------------------")
+            self.log_message(f"Processed Still Images: {image_counts.get('processed_count', 0)}")
+            self.log_message(f"Processed Stills Size: {processed_size_str}")
+            self.log_message(f"Raw Images: {image_counts.get('raw_count', 0)}")
+            self.log_message(f"Raw Images Size: {raw_size_str}")
+            self.log_message(f"Other Files: {image_counts.get('other_count', 0)}")
+            self.log_message(f"Other Files Size: {other_size_str}")
+            self.log_message(f"Total Files: {image_counts.get('total_count', 0)}")
+            self.log_message(f"Total Size: {total_size_str}")
+            self.log_message("")
+            
+            # Get altitude statistics
+            altitude_stats = metrics.get_altitude_statistics(self.altitude_threshold)
+            if altitude_stats and altitude_stats.get('count', 0) > 0:
+                # Log altitude stats
+                self.log_message("Altitude Analysis (Navigation Data):")
+                self.log_message("----------------------------------------")
+                self.log_message(f"Images with navigation altitude data: {altitude_stats['count']} of {image_counts.get('processed_count', 0)} processed images")
+                self.log_message(f"Images below {self.altitude_threshold}m: {altitude_stats['below_threshold']} ({altitude_stats['below_percent']:.1f}%)")
+                self.log_message(f"Images above {self.altitude_threshold}m: {altitude_stats['above_threshold']} ({altitude_stats['above_percent']:.1f}%)")
+                self.log_message(f"Altitude range: {altitude_stats['min']:.2f}m to {altitude_stats['max']:.2f}m")
+                self.log_message(f"Average altitude: {altitude_stats['avg']:.2f}m")
+                self.log_message(f"Median altitude: {altitude_stats['median']:.2f}m")
+                self.log_message(f"Standard deviation: {altitude_stats['std_dev']:.2f}m")
+                if metrics.metrics_file:
+                    self.log_message(f"Basic metrics saved to: {metrics.metrics_file}")
+                self.log_message("")
+        except Exception as e:
+            self.log_message(f"Error logging metrics summary: {str(e)}")
 
 
