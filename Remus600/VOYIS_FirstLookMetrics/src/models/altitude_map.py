@@ -77,108 +77,203 @@ class AltitudeMap:
     def create_location_map(self, gps_data: List[Dict], output_path: str, 
                        filename: str = "image_locations_map.png",
                        metrics=None) -> Optional[str]:
-        """Modified version with outlier handling"""
+        """Create location map with outlier handling"""
         if not gps_data:
+            print("No GPS data available")
             return None
         
-        # Detect outliers
-        outliers = self._detect_outliers(gps_data)
-        
-        # Create non-outlier subset for plotting
-        plot_data = [point for point, is_outlier in zip(gps_data, outliers) if not is_outlier]
-        
-        print(f"\nExcluding {sum(outliers)} outlier points from plots (but keeping them in export files)")
-        
-        # Use plot_data for visualization but keep original data for exports
-        # Rest of the existing function code, but use plot_data instead of gps_data for plotting
         try:
-            # Set up matplotlib for non-interactive use
-            import matplotlib
-            matplotlib.use('Agg')
+            # Validate data points first
+            valid_data = []
+            invalid_data = []
             
-            # Create figure and axis
-            fig, ax = plt.subplots(figsize=(10, 8))
+            # Use gps_data instead of plot_data here
+            for i, point in enumerate(gps_data):
+                required_fields = ['latitude', 'longitude', 'altitude']
+                missing_fields = [field for field in required_fields if field not in point]
+                
+                if missing_fields:
+                    invalid_data.append({
+                        'index': i,
+                        'missing_fields': missing_fields,
+                        'filename': point.get('filename', 'unknown')
+                    })
+                else:
+                    valid_data.append(point)
             
-            # Extract coordinates and altitudes
-            lats = [p['latitude'] for p in plot_data]
-            lons = [p['longitude'] for p in plot_data]
-            alts = [p['altitude'] for p in plot_data]
+            if invalid_data:
+                print("\nWarning: Found invalid GPS data points:")
+                for item in invalid_data[:5]:
+                    print(f"Index {item['index']}: Missing {', '.join(item['missing_fields'])} for file: {item['filename']}")
+                if len(invalid_data) > 5:
+                    print(f"...and {len(invalid_data) - 5} more invalid points")
             
-            # Use class variable for low altitude threshold
-            low_altitude_threshold = self.low_altitude_threshold
+            if not valid_data:
+                print("No valid GPS points found after filtering invalid data")
+                return None
             
-            # Separate points into three altitude categories
-            optimal_mask = [(a >= low_altitude_threshold) and (a < self.altitude_threshold) for a in alts]
-            too_high_mask = [a >= self.altitude_threshold for a in alts]
-            too_low_mask = [a < low_altitude_threshold for a in alts]
+            # Detect outliers
+            outliers = self._detect_outliers(valid_data)
             
-            # Count points in each category
-            optimal_count = sum(optimal_mask)
-            too_high_count = sum(too_high_mask)
-            too_low_count = sum(too_low_mask)
-            total_count = len(alts)
+            # Create separate lists for plotting and export
+            plot_data = [point for point, is_outlier in zip(valid_data, outliers) if not is_outlier]
+            export_data = valid_data  # Keep all valid data for export
             
-            # Create scatter plots with different colors for each category
-            sc1 = ax.scatter([lons[i] for i in range(len(lons)) if optimal_mask[i]],
-                           [lats[i] for i in range(len(lats)) if optimal_mask[i]],
-                           c='green', label=f'Optimal altitude ({low_altitude_threshold}-{self.altitude_threshold}m): {optimal_count} images', 
-                           alpha=0.6, s=50)
-                           
-            sc2 = ax.scatter([lons[i] for i in range(len(lons)) if too_high_mask[i]],
-                           [lats[i] for i in range(len(lats)) if too_high_mask[i]],
-                           c='red', label=f'Too high (>{self.altitude_threshold}m): {too_high_count} images', 
-                           alpha=0.6, s=50)
-                           
-            sc3 = ax.scatter([lons[i] for i in range(len(lons)) if too_low_mask[i]],
-                           [lats[i] for i in range(len(lats)) if too_low_mask[i]],
-                           c='orange', label=f'Too low (<{low_altitude_threshold}m): {too_low_count} images', 
-                           alpha=0.6, s=50)
+            print(f"\nProcessing {len(plot_data)} points for visualization ({len(invalid_data)} invalid, {sum(outliers)} outliers)")
             
-            # Calculate percentages
-            optimal_pct = (optimal_count / total_count) * 100
-            too_high_pct = (too_high_count / total_count) * 100
-            too_low_pct = (too_low_count / total_count) * 100
+            # Export data to GIS formats first
+            try:
+                self.export_to_gis_formats(export_data, output_path)
+            except Exception as e:
+                print(f"Warning: Failed to export GIS formats: {e}")
             
-            # Add labels and title
-            ax.set_xlabel('Longitude', fontsize=12)
-            ax.set_ylabel('Latitude', fontsize=12)
-            ax.set_title('Image Locations by Altitude', fontsize=14)
-            
-            # Add grid
-            ax.grid(True, linestyle='--', alpha=0.7)
-            
-            # Add legend
-            legend = ax.legend(loc='upper right', fontsize=10)
-            
-            # Add statistics annotation
-            stats_text = f'Total Images: {total_count}\n'
-            stats_text += f'Optimal ({low_altitude_threshold}-{self.altitude_threshold}m): {optimal_count} ({optimal_pct:.1f}%)\n'
-            stats_text += f'Too high (>{self.altitude_threshold}m): {too_high_count} ({too_high_pct:.1f}%)\n'
-            stats_text += f'Too low (<{low_altitude_threshold}m): {too_low_count} ({too_low_pct:.1f}%)'
-            
-            # Add stats box
-            ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, 
-                  verticalalignment='bottom', horizontalalignment='left',
-                  bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-            
-            # Add scale bar if metrics object with scale info is available
-            if metrics and hasattr(metrics, 'scale_info') and metrics.scale_info:
-                self._add_scale_bar(ax, metrics.scale_info)
-            
-            plt.tight_layout()
-            
-            # Save plot
-            output_file = os.path.join(output_path, filename)
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            plt.close(fig)  # Close the figure to free memory
-            
-            print(f"Location map saved to: {output_file}")
-            return output_file
+            # Create visualization
+            return self._create_location_plot(plot_data, output_path, filename, metrics)
             
         except Exception as e:
-            print(f"Error creating location map: {e}")
+            print(f"Error in create_location_map: {e}")
             import traceback
             print(traceback.format_exc())
+            return None
+
+    def _create_location_plot(self, plot_data: List[Dict], output_path: str, 
+                         filename: str, metrics=None) -> Optional[str]:
+        """Create the actual plot using cleaned data"""
+        # ... existing plotting code moved here ...
+        if not plot_data:
+            print("No GPS data available")
+            return None
+        
+        try:
+            # Validate data points first
+            valid_data = []
+            invalid_data = []
+            
+            for i, point in enumerate(plot_data):
+                required_fields = ['latitude', 'longitude', 'altitude']
+                missing_fields = [field for field in required_fields if field not in point]
+                
+                if missing_fields:
+                    invalid_data.append({
+                        'index': i,
+                        'missing_fields': missing_fields,
+                        'filename': point.get('filename', 'unknown')
+                    })
+                else:
+                    valid_data.append(point)
+            
+            if invalid_data:
+                print("\nWarning: Found invalid GPS data points:")
+                for item in invalid_data[:5]:
+                    print(f"Index {item['index']}: Missing {', '.join(item['missing_fields'])} for file: {item['filename']}")
+                if len(invalid_data) > 5:
+                    print(f"...and {len(invalid_data) - 5} more invalid points")
+            
+            if not valid_data:
+                print("No valid GPS points found after filtering invalid data")
+                return None
+                
+            print(f"\nProcessing {len(valid_data)} valid GPS points ({len(invalid_data)} points excluded)")
+            
+            # Create non-outlier subset for plotting
+            outliers = self._detect_outliers(valid_data)
+            plot_data = [point for point, is_outlier in zip(valid_data, outliers) if not is_outlier]
+            
+            print(f"\nExcluding {sum(outliers)} outlier points from plots (but keeping them in export files)")
+            
+            # Use plot_data for visualization but keep original data for exports
+            # Rest of the existing function code, but use plot_data instead of gps_data for plotting
+            try:
+                # Set up matplotlib for non-interactive use
+                import matplotlib
+                matplotlib.use('Agg')
+                
+                # Create figure and axis
+                fig, ax = plt.subplots(figsize=(10, 8))
+                
+                # Extract coordinates and altitudes
+                lats = [p['latitude'] for p in plot_data]
+                lons = [p['longitude'] for p in plot_data]
+                alts = [p['altitude'] for p in plot_data]
+                
+                # Use class variable for low altitude threshold
+                low_altitude_threshold = self.low_altitude_threshold
+                
+                # Separate points into three altitude categories
+                optimal_mask = [(a >= low_altitude_threshold) and (a < self.altitude_threshold) for a in alts]
+                too_high_mask = [a >= self.altitude_threshold for a in alts]
+                too_low_mask = [a < low_altitude_threshold for a in alts]
+                
+                # Count points in each category
+                optimal_count = sum(optimal_mask)
+                too_high_count = sum(too_high_mask)
+                too_low_count = sum(too_low_mask)
+                total_count = len(alts)
+                
+                # Create scatter plots with different colors for each category
+                sc1 = ax.scatter([lons[i] for i in range(len(lons)) if optimal_mask[i]],
+                               [lats[i] for i in range(len(lats)) if optimal_mask[i]],
+                               c='green', label=f'Optimal altitude ({low_altitude_threshold}-{self.altitude_threshold}m): {optimal_count} images', 
+                               alpha=0.6, s=50)
+                               
+                sc2 = ax.scatter([lons[i] for i in range(len(lons)) if too_high_mask[i]],
+                               [lats[i] for i in range(len(lats)) if too_high_mask[i]],
+                               c='red', label=f'Too high (>{self.altitude_threshold}m): {too_high_count} images', 
+                               alpha=0.6, s=50)
+                               
+                sc3 = ax.scatter([lons[i] for i in range(len(lons)) if too_low_mask[i]],
+                               [lats[i] for i in range(len(lats)) if too_low_mask[i]],
+                               c='orange', label=f'Too low (<{low_altitude_threshold}m): {too_low_count} images', 
+                               alpha=0.6, s=50)
+                
+                # Calculate percentages
+                optimal_pct = (optimal_count / total_count) * 100
+                too_high_pct = (too_high_count / total_count) * 100
+                too_low_pct = (too_low_count / total_count) * 100
+                
+                # Add labels and title
+                ax.set_xlabel('Longitude', fontsize=12)
+                ax.set_ylabel('Latitude', fontsize=12)
+                ax.set_title('Image Locations by Altitude', fontsize=14)
+                
+                # Add grid
+                ax.grid(True, linestyle='--', alpha=0.7)
+                
+                # Add legend
+                legend = ax.legend(loc='upper right', fontsize=10)
+                
+                # Add statistics annotation
+                stats_text = f'Total Images: {total_count}\n'
+                stats_text += f'Optimal ({low_altitude_threshold}-{self.altitude_threshold}m): {optimal_count} ({optimal_pct:.1f}%)\n'
+                stats_text += f'Too high (>{self.altitude_threshold}m): {too_high_count} ({too_high_pct:.1f}%)\n'
+                stats_text += f'Too low (<{low_altitude_threshold}m): {too_low_count} ({too_low_pct:.1f}%)'
+                
+                # Add stats box
+                ax.text(0.02, 0.02, stats_text, transform=ax.transAxes, 
+                      verticalalignment='bottom', horizontalalignment='left',
+                      bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+                
+                # Add scale bar if metrics object with scale info is available
+                if metrics and hasattr(metrics, 'scale_info') and metrics.scale_info:
+                    self._add_scale_bar(ax, metrics.scale_info)
+                
+                plt.tight_layout()
+                
+                # Save plot
+                output_file = os.path.join(output_path, filename)
+                plt.savefig(output_file, dpi=300, bbox_inches='tight')
+                plt.close(fig)  # Close the figure to free memory
+                
+                print(f"Location map saved to: {output_file}")
+                return output_file
+                
+            except Exception as e:
+                print(f"Error creating location map: {e}")
+                import traceback
+                print(traceback.format_exc())
+                return None
+        except Exception as e:
+            print(f"Error processing GPS data: {e}")
             return None
     
     def create_altitude_histogram(self, gps_data: List[Dict], output_path: str, 
@@ -372,203 +467,48 @@ class AltitudeMap:
             return None
     
     def export_to_gis_formats(self, gps_data: List[Dict], output_path: str, 
-                      csv_filename: str = "image_locations.csv",
-                      shapefile_filename: str = "image_locations.shp") -> Dict[str, str]:
-        """
-        Export GPS data to CSV and shapefile formats
-        """
+                             csv_filename: str = "image_locations.csv",
+                             shapefile_filename: str = "image_locations.shp") -> Dict[str, str]:
+        """Export GPS data to CSV and Shapefile formats"""
         result_files = {}
-    
-        # Add this at the start of the function for debugging
-        print("\n--- STARTING CSV EXPORT ---")
-    
+        print("\n--- STARTING GIS EXPORT ---")
+        
         try:
-            # Filter out points with no latitude/longitude or no navigation altitude
-            valid_points = [p for p in gps_data if 
-                           'latitude' in p and 'longitude' in p and 
-                           'altitude' in p and 
-                           (not 'altitude_source' in p or p['altitude_source'] == 'nav')]
+            # Create output directory if it doesn't exist
+            os.makedirs(output_path, exist_ok=True)
             
-            if not valid_points:
-                print("No valid GPS points with navigation altitude data to export")
-                return result_files
-                
-            # Clean up attribute names and handle nested data
-            valid_points_cleaned = []
-            for point in valid_points:
-                point_copy = point.copy()
-                
-                # Ensure altitude_source is set to 'nav' for consistency
-                if 'altitude' in point:
-                    point_copy['altitude_source'] = 'nav'
-                    
-                    # Add altitude classification
-                    if point['altitude'] < self.low_altitude_threshold:
-                        point_copy['altitude_class'] = 'Too low'
-                    elif point['altitude'] < self.altitude_threshold:
-                        point_copy['altitude_class'] = 'Optimal'
-                    else:
-                        point_copy['altitude_class'] = 'Too high'
-                else:
-                    point_copy['altitude_class'] = 'Unknown'
-                
-                # Copy width and height to ImageWidth and ImageHeight for consistency
-                if 'width' in point and 'ImageWidth' not in point:
-                    point_copy['ImageWidth'] = point['width']
-                    # If we've made the copy, remove the original to avoid duplication
-                    if 'width' in point_copy and 'width' != 'ImageWidth':
-                        del point_copy['width']
-                        
-                if 'height' in point and 'ImageHeight' not in point:
-                    point_copy['ImageHeight'] = point['height']
-                    # If we've made the copy, remove the original to avoid duplication
-                    if 'height' in point_copy and 'height' != 'ImageHeight':
-                        del point_copy['height']
-                
-                # Extract EXIF data if it's nested
-                if 'exif' in point and isinstance(point['exif'], dict):
-                    for key, value in point['exif'].items():
-                        # Don't overwrite existing values
-                        if key not in point_copy:
-                            point_copy[key] = value
-                    
-                    # Remove the nested exif dictionary
-                    del point_copy['exif']
-                    
-                valid_points_cleaned.append(point_copy)
-                
-            # Create a pandas DataFrame from the GPS data
-            df = pd.DataFrame(valid_points_cleaned)
+            # Create DataFrame
+            df = pd.DataFrame(gps_data)
             
-            # After creating the DataFrame, but BEFORE any column ordering
-            print("INITIAL COLUMNS:", list(df.columns))
-            
-            # Check if an existing CSV file exists and load highlight metrics if it does
-            csv_path = os.path.join(output_path, csv_filename)
-            highlight_metrics = {}
-            existing_columns = []
-            
-            if os.path.exists(csv_path):
-                try:
-                    existing_df = pd.read_csv(csv_path)
-                    existing_columns = list(existing_df.columns)
-                    
-                    # Check if the existing file has metrics columns
-                    metric_columns = ['contrast', 'texture', 'color_variance', 'entropy', 'combined_score']
-                    has_metrics = any(col in existing_df.columns for col in metric_columns)
-                    
-                    if has_metrics:
-                        print(f"Found existing metrics in {csv_path}")
-                        
-                        # Create a mapping of filenames to metrics
-                        filename_col = 'filename'
-                        if filename_col in existing_df.columns:
-                            for _, row in existing_df.iterrows():
-                                if pd.isna(row[filename_col]):
-                                    continue
-                                    
-                                filename = row[filename_col]
-                                metrics_dict = {}
-                                
-                                for col in metric_columns:
-                                    if col in existing_df.columns and not pd.isna(row.get(col)):
-                                        metrics_dict[col] = row.get(col)
-                                
-                                if metrics_dict:  # Only add if we found some metrics
-                                    highlight_metrics[filename] = metrics_dict
-                except Exception as e:
-                    print(f"Error reading existing CSV: {e}")
-            
-            # Add missing columns if they don't exist
-            for column in ["filename", "DateTime", "latitude", "longitude", "altitude", 
-                           "SubjectDistance", "ExposureTime", "FNumber", "FocalLength",
-                           "ImageWidth", "ImageHeight"]:
-                if column not in df.columns:
-                    df[column] = "N/A"
-            
-            # Add a field to indicate whether altitude is below threshold
-            if 'altitude' in df.columns:
-                df['below_threshold'] = df['altitude'].apply(lambda alt: 'Yes' if alt < self.altitude_threshold else 'No')
-                df['too_low'] = df['altitude'].apply(lambda alt: 'Yes' if alt < self.low_altitude_threshold else 'No')
-            else:
-                df['below_threshold'] = "N/A"
-                df['too_low'] = "N/A"
-            
-            # Replace any NaN values with "N/A" for better CSV output
-            df = df.fillna("N/A")
-            
-            # Add highlight metrics to dataframe if available
-            if highlight_metrics:
-                # Initialize metric columns
-                metric_columns = ['contrast', 'texture', 'color_variance', 'entropy', 'combined_score']
-                for col in metric_columns:
-                    if col not in df.columns:
-                        df[col] = None
-                
-                # Add metrics data to the dataframe
-                for i, row in df.iterrows():
-                    if 'filename' in row and row['filename'] in highlight_metrics:
-                        for col, value in highlight_metrics[row['filename']].items():
-                            df.at[i, col] = value
-            
-            # Define the standard columns order - CRITICALLY IMPORTANT
-            # This defines the EXACT order of columns in the output CSV
-            standard_columns = [
-                "filename", "file_type", "DateTime", "latitude", "longitude", "altitude", "SubjectDistance",
-                "ExposureTime", "FNumber", "FocalLength", "ImageWidth", "ImageHeight"
-            ]
-
-            # Get metric columns if they exist
-            metric_columns = ['contrast', 'texture', 'color_variance', 'entropy', 'combined_score']
-
-            # First identify which standard columns actually exist in our data
-            available_std_cols = [col for col in standard_columns if col in df.columns]
-
-            # Then identify which metric columns exist
-            available_metric_cols = [col for col in metric_columns if col in df.columns]
-
-            # Get all other columns that aren't in either list
-            other_cols = [col for col in df.columns 
-                          if col not in standard_columns and col not in metric_columns]
-
-            # Construct the final column order: standard columns, then other columns, then metrics
-            final_columns = available_std_cols + other_cols + available_metric_cols
-            print("FINAL COLUMN ORDER:", final_columns)
-
-            # Reorder the DataFrame with our desired column order
-            df = df[final_columns]
-            
-            # Export to CSV
+            # Export CSV
             csv_path = os.path.join(output_path, csv_filename)
             df.to_csv(csv_path, index=False)
-            print("CSV EXPORTED WITH COLUMNS:", list(df.columns))
             result_files['csv'] = csv_path
-            print(f"GPS data exported to CSV: {csv_path}")
+            print(f"CSV exported successfully: {csv_path}")
             
-            # Export to shapefile if geopandas is available
+            # Export Shapefile if geopandas is available
             if GEOPANDAS_AVAILABLE:
-                # Create a GeoDataFrame
-                geometry = [Point(xy) for xy in zip(df['longitude'], df['latitude'])]
-                gdf = gpd.GeoDataFrame(df, geometry=geometry)
-                
-                # Set coordinate reference system (WGS84)
-                gdf.crs = "EPSG:4326"
-                
-                # Export to shapefile
-                shapefile_path = os.path.join(output_path, shapefile_filename)
-                gdf.to_file(shapefile_path)
-                result_files['shapefile'] = shapefile_path
-                print(f"GPS data exported to shapefile: {shapefile_path}")
-            else:
-                print("Geopandas not available, skipping shapefile export")
+                try:
+                    # Create geometry column
+                    geometry = [Point(x['longitude'], x['latitude']) 
+                              for x in gps_data]
+                    
+                    # Create GeoDataFrame
+                    gdf = gpd.GeoDataFrame(df, geometry=geometry, crs="EPSG:4326")
+                    
+                    # Export to shapefile
+                    shapefile_path = os.path.join(output_path, shapefile_filename)
+                    gdf.to_file(shapefile_path)
+                    result_files['shapefile'] = shapefile_path
+                    print(f"Shapefile exported successfully: {shapefile_path}")
+                    
+                except Exception as e:
+                    print(f"Error exporting shapefile: {str(e)}")
             
-            print("--- CSV EXPORT COMPLETED ---\n")
             return result_files
             
         except Exception as e:
-            print(f"Error exporting GPS data: {e}")
-            import traceback
-            print(traceback.format_exc())
+            print(f"Error in GIS export: {str(e)}")
             return result_files
 
     def extract_exif_data(self, image_path: str) -> Dict:
