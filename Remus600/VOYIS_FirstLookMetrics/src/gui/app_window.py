@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 import os
 import threading
+import queue
 import builtins
 from tkinter import scrolledtext
 from typing import Optional
@@ -87,6 +88,9 @@ class AppWindow:
         # Then create the rest of the UI
         self.create_input_section()
         self.create_functions_section()
+        
+        # Initialize the UI update queue and thread
+        self.setup_ui_update_thread()
 
     def create_frames(self):
         """Create the main frames for the application with scrolling support"""
@@ -273,6 +277,27 @@ class AppWindow:
         # Update the "All" checkbox state
         self.update_all_checkbox()
 
+    def setup_ui_update_thread(self):
+        """Set up a queue and thread for updating the UI from background threads"""
+        self.ui_queue = queue.Queue()
+        
+        # Define the function to process the queue
+        def process_ui_queue():
+            try:
+                # Process all items currently in the queue
+                while not self.ui_queue.empty():
+                    func, args = self.ui_queue.get_nowait()
+                    func(*args)
+                    self.ui_queue.task_done()
+            except Exception as e:
+                print(f"Error processing UI queue: {str(e)}")
+            finally:
+                # Schedule to run again
+                self.root.after(100, process_ui_queue)
+        
+        # Start the queue processing
+        self.root.after(100, process_ui_queue)
+
     def log_message(self, message):
         """
         Add a message to the log text
@@ -284,40 +309,60 @@ class AppWindow:
         timestamp = time.strftime("[%H:%M:%S]")
         log_entry = f"{timestamp} {message}"
         
-        # Add to text widget
+        # Print to console immediately
+        print(log_entry)
+        
+        # Add to UI queue if we're in a background thread
+        if threading.current_thread() is not threading.main_thread():
+            self.ui_queue.put((self._update_log_text, (log_entry,)))
+        else:
+            # We're in the main thread, update directly
+            self._update_log_text(log_entry)
+
+    def _update_log_text(self, log_entry):
+        """Helper method to update the log text widget"""
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, log_entry + "\n")
         self.log_text.see(tk.END)  # Scroll to the end
         self.log_text.config(state=tk.DISABLED)
-        
-        # Also print to console
-        print(log_entry)
 
     def update_progress(self, value, message="Processing..."):
         """Update the progress bar and message"""
+        if threading.current_thread() is not threading.main_thread():
+            self.ui_queue.put((self._update_progress_ui, (value, message)))
+        else:
+            self._update_progress_ui(value, message)
+
+    def _update_progress_ui(self, value, message):
+        """Helper method to update progress UI elements"""
         self.progress_var.set(value)
         self.progress_label.config(text=message)
         self.root.update_idletasks()
-        
+
     def process_images(self):
         """Main function to process images based on selected options"""
+        # Disable the process button to prevent multiple clicks
+        self.process_button.configure(state=tk.DISABLED)
+        
         if self.batch_mode:
             # Use batch processing
-            self.process_batch()
+            threading.Thread(target=self.process_batch, daemon=True).start()
             return
-            
+        
         # Single mode processing
         input_folder = self.input_path.get()
         output_folder = self.output_path.get()
         
         if not input_folder or not os.path.isdir(input_folder):
             messagebox.showerror("Error", "Please select a valid input folder.")
+            self.process_button.configure(state=tk.NORMAL)
             return
             
         if not output_folder:
             messagebox.showerror("Error", "Please select an output folder.")
+            self.process_button.configure(state=tk.NORMAL)
             return
-            
+        
         # Create output folder if it doesn't exist
         os.makedirs(output_folder, exist_ok=True)
         
@@ -325,7 +370,15 @@ class AppWindow:
         self.log_message(f"Processing images from {input_folder}")
         self.log_message(f"Output folder: {output_folder}")
         
-        # Process images
+        # Process images in a background thread
+        threading.Thread(
+            target=self._process_images_thread,
+            args=(input_folder, output_folder),
+            daemon=True
+        ).start()
+
+    def _process_images_thread(self, input_folder, output_folder):
+        """Background thread function for processing images"""
         try:
             self.analyze_images(input_folder, output_folder)
             
