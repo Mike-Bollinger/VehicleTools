@@ -45,6 +45,7 @@ from tkinter import ttk, filedialog, messagebox
 import arcpy
 import threading
 import time
+import traceback
 
 class LayoutAutomatorApp:
     def __init__(self, root):
@@ -123,33 +124,31 @@ class LayoutAutomatorApp:
         self.layout_dropdown = ttk.Combobox(layout_frame, textvariable=self.layout_name, state="readonly", width=40)
         self.layout_dropdown.grid(row=0, column=1, sticky=tk.W, pady=5)
         
-        # Extent layer group selection - MOVED UP TO HERE
+        # Extent layer group selection with multiple checkboxes - ENHANCED VERSION
         extent_frame = ttk.LabelFrame(main_frame, text="Extent Control", padding="10")
         extent_frame.pack(fill=tk.X, pady=5)
-        
-        ttk.Label(extent_frame, text="Select layer group to define map extent:").grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.extent_group_var = tk.StringVar()
-        self.extent_group_dropdown = ttk.Combobox(extent_frame, textvariable=self.extent_group_var, state="readonly", width=40)
-        self.extent_group_dropdown.grid(row=0, column=1, sticky=tk.W, pady=5)
-        
+
         # Add a checkbox for fixed extent option
         self.use_fixed_extent = tk.BooleanVar(value=False)
         ttk.Checkbutton(extent_frame, text="Use fixed extent (don't zoom to features)", 
-                        variable=self.use_fixed_extent).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=5)
-    
+                        variable=self.use_fixed_extent).grid(row=0, column=0, sticky=tk.W, pady=5)
+
         # Add layout element awareness option
         self.avoid_elements = tk.BooleanVar(value=True)
         ttk.Checkbutton(extent_frame, text="Smart extent: avoid legends, scale bars and inset maps", 
-                        variable=self.avoid_elements).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
+                        variable=self.avoid_elements).grid(row=1, column=0, sticky=tk.W, pady=5)
 
         # Add extent buffer controls
         buffer_frame = ttk.Frame(extent_frame)
-        buffer_frame.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=5)
+        buffer_frame.grid(row=2, column=0, sticky=tk.W, pady=5)
 
         ttk.Label(buffer_frame, text="Extent buffer (%):").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.buffer_percentage = tk.IntVar(value=10)
         ttk.Entry(buffer_frame, textvariable=self.buffer_percentage, width=5).grid(row=0, column=1, sticky=tk.W, pady=5, padx=(5,20))
-        
+
+        ttk.Label(extent_frame, text="Note: Extent will include all visible layers from selected layer groups", 
+                  foreground="blue", font=("TkDefaultFont", 8)).grid(row=3, column=0, sticky=tk.W, pady=(5,0))
+
         # Layer group selection
         self.layer_groups_frame = ttk.LabelFrame(main_frame, text="Layer Groups (Select groups containing dive layers)", padding="10")
         self.layer_groups_frame.pack(fill=tk.BOTH, expand=True, pady=5)
@@ -403,13 +402,9 @@ class LayoutAutomatorApp:
         else:
             self.log_message(f"Found {len(self.layer_group_vars)} layer groups across {len(maps)} maps")
             
-        # Update the extent group dropdown
-        self.update_extent_group_dropdown()
     
-    # Add this new method to handle changes in layer group selection
-    def on_layer_group_selection_changed(self):
-        """Update the extent dropdown when layer group selection changes"""
-        self.update_extent_group_dropdown()
+ 
+
     
     def analyze_selected_groups(self):
         """Analyze the selected layer groups to find dive numbers"""
@@ -473,18 +468,10 @@ class LayoutAutomatorApp:
             sorted_dives = sorted(all_dive_numbers, key=int)
             self.log_message(f"\nAll dive numbers across selected groups: {', '.join(sorted_dives)}")
             self.log_message(f"Total unique dive numbers: {len(all_dive_numbers)}")
+            self.log_message(f"Extent will include ALL visible layers from selected groups for each dive")
         else:
             self.log_message("\nNo dive layers found in the selected groups")
         
-        # Update the extent group dropdown with the selected layer groups
-        self.update_extent_group_dropdown()
-        
-        # If there are selected groups but no extent group is selected, select the first one
-        if all_dive_numbers and not self.extent_group_var.get():
-            selected_groups = [key for key, var in self.layer_group_vars.items() if var.get()]
-            if selected_groups:
-                self.extent_group_var.set(selected_groups[0])
-                self.log_message(f"Automatically selected {selected_groups[0]} as the extent group")
     
     def start_processing(self):
         """Start the processing in a background thread with timeout monitoring"""
@@ -801,7 +788,7 @@ class LayoutAutomatorApp:
             messagebox.showerror("Error", error_message)
     
     def zoom_to_active_layers(self, layout, active_map_obj, dive_id):
-        """Zoom to the extent of active layers for the given dive using the selected extent group"""
+        """Zoom to the extent of active layers with smart element avoidance"""
         # Check if we should use fixed extent
         if self.use_fixed_extent.get():
             self.log_message("  Using fixed extent (not zooming to features)")
@@ -818,20 +805,19 @@ class LayoutAutomatorApp:
             self.log_message(f"  Map frame for {active_map_obj.name} not found in layout")
             return
         
-        # Get the selected extent group
-        extent_group_key = self.extent_group_var.get()
-        if not extent_group_key:
-            self.log_message("  No extent group selected, using all visible dive layers")
-            # Use the old method with all visible layers
-            visible_layers = []
-            for layer in active_map_obj.listLayers():
-                if hasattr(layer, 'visible') and layer.visible and dive_id.upper() in layer.name.upper():
-                    if hasattr(layer, 'isFeatureLayer') and layer.isFeatureLayer:
-                        visible_layers.append(layer)
-        else:
-            # Use the selected extent group
-            self.log_message(f"  Using extent group: {extent_group_key}")
-            map_name, group_name = extent_group_key.split(':', 1)
+        # Get ALL visible layers from ALL selected layer groups for this dive
+        selected_groups = [key for key, var in self.layer_group_vars.items() if var.get()]
+        
+        if not selected_groups:
+            self.log_message("  No layer groups selected")
+            return
+        
+        self.log_message(f"  Getting extent from all visible layers in {len(selected_groups)} selected groups")
+        visible_layers = []
+        
+        # Collect all visible dive layers from all selected groups
+        for group_key in selected_groups:
+            map_name, group_name = group_key.split(':', 1)
             
             # Get the map object
             map_obj = None
@@ -841,8 +827,7 @@ class LayoutAutomatorApp:
                     break
             
             if not map_obj:
-                self.log_message(f"  Map not found for extent: {map_name}")
-                return
+                continue
             
             # Find the group layer
             group_layer = None
@@ -852,238 +837,344 @@ class LayoutAutomatorApp:
                     break
             
             if not group_layer:
-                self.log_message(f"  Group layer not found for extent: {group_name}")
-                return
+                continue
             
-            # Get visible layers for this dive from the selected group
-            visible_layers = []
+            # Get ALL visible layers for this dive from this group
+            group_layers = []
             for layer in group_layer.listLayers():
                 if hasattr(layer, 'visible') and layer.visible and dive_id.upper() in layer.name.upper():
-                    if hasattr(layer, 'isFeatureLayer') and layer.isFeatureLayer:
-                        visible_layers.append(layer)
-    
+                    # Include any layer type that has a valid extent
+                    try:
+                        # FIXED: Proper extent validation
+                        layer_extent = arcpy.Describe(layer).extent
+                        
+                        # Check if extent is valid by examining its dimensions
+                        if (layer_extent and 
+                            hasattr(layer_extent, 'XMin') and 
+                            hasattr(layer_extent, 'XMax') and
+                            hasattr(layer_extent, 'YMin') and 
+                            hasattr(layer_extent, 'YMax') and
+                            layer_extent.XMax > layer_extent.XMin and 
+                            layer_extent.YMax > layer_extent.YMin):
+                        
+                            group_layers.append(layer)
+                            self.log_message(f"    Including {layer.name} from {group_name}")
+                            self.log_message(f"      Extent: ({layer_extent.XMin:.0f}, {layer_extent.YMin:.0f}) to ({layer_extent.XMax:.0f}, {layer_extent.YMax:.0f})")
+                        else:
+                            self.log_message(f"    Skipping {layer.name} (invalid extent dimensions)")
+                        
+                    except Exception as e:
+                        self.log_message(f"    Skipping {layer.name} (extent error): {str(e)}")
+            
+            visible_layers.extend(group_layers)
+            self.log_message(f"    {group_name}: {len(group_layers)} layers with valid extents")
+
         if not visible_layers:
-            self.log_message(f"  No visible feature layers found for {dive_id}")
+            self.log_message(f"  No visible layers with valid extents found for {dive_id}")
             return
         
-        # Get combined extent
-        self.log_message(f"  Getting extent from {len(visible_layers)} layers")
+        # Calculate combined extent from ALL visible layers
+        self.log_message(f"  Calculating combined extent from {len(visible_layers)} layers")
         extent = None
         for layer in visible_layers:
             try:
                 layer_extent = arcpy.Describe(layer).extent
-                if extent is None:
-                    extent = layer_extent
-                else:
-                    extent = extent.union(layer_extent)
+                
+                # FIXED: Proper extent validation and combination
+                if (layer_extent and 
+                    hasattr(layer_extent, 'XMin') and 
+                    layer_extent.XMax > layer_extent.XMin and 
+                    layer_extent.YMax > layer_extent.YMin):
+                    
+                    if extent is None:
+                        extent = layer_extent
+                        self.log_message(f"    Base extent from: {layer.name}")
+                        self.log_message(f"      Extent: ({extent.XMin:.0f}, {extent.YMin:.0f}) to ({extent.XMax:.0f}, {extent.YMax:.0f})")
+                    else:
+                        # Expand the extent to include this layer
+                        original_area = extent.width * extent.height
+                        
+                        # FIXED: Proper extent union
+                        new_xmin = min(extent.XMin, layer_extent.XMin)
+                        new_ymin = min(extent.YMin, layer_extent.YMin)
+                        new_xmax = max(extent.XMax, layer_extent.XMax)
+                        new_ymax = max(extent.YMax, layer_extent.YMax)
+                        
+                        extent = arcpy.Extent(new_xmin, new_ymin, new_xmax, new_ymax)
+                        
+                        new_area = extent.width * extent.height
+                        if new_area > original_area * 1.1:  # Only log if significant expansion
+                            self.log_message(f"    Expanded extent for: {layer.name}")
+                            self.log_message(f"      New extent: ({extent.XMin:.0f}, {extent.YMin:.0f}) to ({extent.XMax:.0f}, {extent.YMax:.0f})")
+                            
             except Exception as e:
                 self.log_message(f"  Error getting extent for {layer.name}: {str(e)}")
         
-        if extent:
-            # Get buffer percentage from control
-            buffer_pct = self.buffer_percentage.get() / 100.0
-            
-            # Calculate basic buffer amounts
-            buffer_x = extent.width * buffer_pct
-            buffer_y = extent.height * buffer_pct
-            
-            # Create initial buffered extent
-            buffered_extent = arcpy.Extent(
-                extent.XMin - buffer_x,
-                extent.YMin - buffer_y,
-                extent.XMax + buffer_x,
-                extent.YMax + buffer_y
-            )
-            
-            # Apply smart element avoidance if enabled
-            if self.avoid_elements.get():
+        # FIXED: Better extent validation
+        if not extent or extent.width <= 0 or extent.height <= 0:
+            self.log_message(f"  Could not calculate valid extent for {dive_id}")
+            return
+        
+        # Apply buffer percentage
+        buffer_pct = self.buffer_percentage.get() / 100.0
+        buffer_x = extent.width * buffer_pct
+        buffer_y = extent.height * buffer_pct
+        
+        # Create initial buffered extent
+        buffered_extent = arcpy.Extent(
+            extent.XMin - buffer_x,
+            extent.YMin - buffer_y,
+            extent.XMax + buffer_x,
+            extent.YMax + buffer_y
+        )
+        
+        self.log_message(f"  Initial extent: {extent.width:.0f} x {extent.height:.0f} units")
+        self.log_message(f"  Buffered extent: {buffered_extent.width:.0f} x {buffered_extent.height:.0f} units (+{buffer_pct*100:.0f}%)")
+        
+        # Apply smart element avoidance if enabled
+        if self.avoid_elements.get():
+            try:
+                self.log_message("  Applying smart element avoidance...")
+                
+                # Get elements by type
+                text_elements = list(layout.listElements("TEXT_ELEMENT"))
+                graphic_elements = list(layout.listElements("GRAPHIC_ELEMENT"))
+                legend_elements = list(layout.listElements("LEGEND_ELEMENT"))
+                mapsurround_elements = list(layout.listElements("MAPSURROUND_ELEMENT"))
+                mapframe_elements = [mf for mf in layout.listElements("MAPFRAME_ELEMENT") if mf != map_frame]
+                picture_elements = list(layout.listElements("PICTURE_ELEMENT"))
+                
+                # Set initial centered extent
                 try:
-                    self.log_message("  Applying smart element avoidance...")
-                    
-                    # Find map elements that might overlap data
-                    elements_to_avoid = []
-                    
-                    # Get elements that could overlap: legends, north arrows, scale bars, inset maps
-                    for elem_type in ["LEGEND_ELEMENT", "MAPSURROUND_ELEMENT", "MAPFRAME_ELEMENT"]:
-                        elements = layout.listElements(elem_type)
-                        
-                        # Skip the main map frame
-                        if elem_type == "MAPFRAME_ELEMENT":
-                            elements = [e for e in elements if e != map_frame]
+                    map_frame.camera.setExtent(buffered_extent)
+                    self.log_message("  Set initial centered extent")
+                except Exception as e:
+                    self.log_message(f"  Warning: Initial extent setting failed: {str(e)}")
+                    # Try fallback method
+                    try:
+                        map_frame.camera = buffered_extent
+                        self.log_message("  Fallback extent setting succeeded")
+                    except Exception as e2:
+                        self.log_message(f"  Fallback extent setting also failed: {str(e2)}")
+                        return
+                
+                # Get map frame boundaries
+                map_x = map_frame.elementPositionX
+                map_y = map_frame.elementPositionY
+                map_width = map_frame.elementWidth
+                map_height = map_frame.elementHeight
+                map_center_x = map_x + map_width / 2
+                map_center_y = map_y + map_height / 2
+                
+                self.log_message(f"  Map frame: ({map_x:.0f}, {map_y:.0f}) size: {map_width:.0f} x {map_height:.0f}")
+                
+                # Check which elements actually intersect with content area
+                conflicting_elements = []
+                all_elements = []
+                all_elements.extend(text_elements)
+                all_elements.extend(graphic_elements)
+                all_elements.extend(legend_elements)
+                all_elements.extend(mapsurround_elements)
+                all_elements.extend(mapframe_elements)
+                all_elements.extend(picture_elements)
+                
+                self.log_message(f"  Checking {len(all_elements)} layout elements for intersections...")
+                
+                for element in all_elements:
+                    try:
+                        if hasattr(element, 'elementPositionX') and hasattr(element, 'elementPositionY'):
+                            elem_x = element.elementPositionX
+                            elem_y = element.elementPositionY
+                            elem_width = element.elementWidth
+                            elem_height = element.elementHeight
                             
-                        elements_to_avoid.extend(elements)
-                    
-                    self.log_message(f"  Found {len(elements_to_avoid)} layout elements to avoid")
-                    
-                    # If we found elements to avoid
-                    if elements_to_avoid:
-                        # Apply the new extent first to get proper coordinates
-                        try:
-                            map_frame.camera.setExtent(buffered_extent)
-                        except Exception as e:
-                            self.log_message(f"  Warning: Initial extent setting failed: {str(e)}")
-                            try:
-                                map_frame.camera = buffered_extent
-                            except:
-                                self.log_message("  Could not set initial extent for element detection")
-                                return
-                        
-                        # Get the new visible area
-                        new_visible_extent = map_frame.camera.getExtent()
-                        
-                        # Convert layout elements to map coordinates
-                        element_areas = []
-                        for element in elements_to_avoid:
-                            try:
-                                # Get element position based on element type
-                                if hasattr(element, 'elementPositionX') and hasattr(element, 'elementPositionY'):
-                                    # Most elements have elementPosition properties
-                                    elem_x = element.elementPositionX
-                                    elem_y = element.elementPositionY
-                                    elem_width = element.elementWidth
-                                    elem_height = element.elementHeight
-                                elif hasattr(element, 'getExtent'):
-                                    # Some elements have a getExtent method
-                                    elem_extent = element.getExtent()
-                                    elem_x = elem_extent.XMin
-                                    elem_y = elem_extent.YMin
-                                    elem_width = elem_extent.XMax - elem_extent.XMin
-                                    elem_height = elem_extent.YMax - elem_extent.YMin
-                                else:
-                                    # Fallback to alternative properties
-                                    elem_properties = {prop: getattr(element, prop) for prop in dir(element) 
-                                                     if not prop.startswith('_') and not callable(getattr(element, prop))}
-                                    
-                                    # Try to identify position properties
-                                    position_props = [prop for prop in elem_properties.keys() 
-                                                     if 'position' in prop.lower() or 'location' in prop.lower()]
-                                    
-                                    if position_props:
-                                        self.log_message(f"  Found alternative position properties: {position_props}")
-                                        # Try to use alternative position properties
-                                        if 'X' in elem_properties and 'Y' in elem_properties:
-                                            elem_x = elem_properties['X']
-                                            elem_y = elem_properties['Y']
-                                            elem_width = elem_properties.get('width', 20)  # Default width if not found
-                                            elem_height = elem_properties.get('height', 20)  # Default height if not found
-                                        else:
-                                            # Skip this element if we can't determine position
-                                            self.log_message(f"  Skipping element: Cannot determine position for {element.name}")
-                                            continue
-                                    else:
-                                        # Skip this element if we can't determine position
-                                        self.log_message(f"  Skipping element: Cannot determine position for {element.name}")
-                                        continue
-                                
-                                # Convert to map coordinates (approximate)
-                                map_width = new_visible_extent.XMax - new_visible_extent.XMin
-                                map_height = new_visible_extent.YMax - new_visible_extent.YMin
-                                page_width = layout.pageWidth
-                                page_height = layout.pageHeight
-                                
-                                # Calculate the element extents in map coordinates
-                                elem_map_min_x = new_visible_extent.XMin + (elem_x / page_width) * map_width
-                                elem_map_min_y = new_visible_extent.YMin + (elem_y / page_height) * map_height
-                                elem_map_max_x = elem_map_min_x + (elem_width / page_width) * map_width
-                                elem_map_max_y = elem_map_min_y + (elem_height / page_height) * map_height
-                                
-                                element_areas.append((elem_map_min_x, elem_map_min_y, elem_map_max_x, elem_map_max_y))
-                                self.log_message(f"  Detected element: {element.name} at position ({elem_x:.1f}, {elem_y:.1f})")
-                            except Exception as e:
-                                # More detailed error logging
-                                self.log_message(f"  Error calculating element area for {type(element).__name__}: {str(e)}")
-                                
-                                # Debug: Output all available properties
-                                try:
-                                    properties = [prop for prop in dir(element) if not prop.startswith('_') and not callable(getattr(element, prop))]
-                                    self.log_message(f"  Available properties for {type(element).__name__}: {', '.join(properties[:10])}...")
-                                except:
-                                    pass
-                        
-                        # Adjust the extent to avoid elements
-                        if element_areas:
-                            # Determine which sides have most elements
-                            left_count = right_count = top_count = bottom_count = 0
-                            
-                            for e_min_x, e_min_y, e_max_x, e_max_y in element_areas:
-                                # Check if element is predominantly on one side
-                                map_center_x = (new_visible_extent.XMin + new_visible_extent.XMax) / 2
-                                map_center_y = (new_visible_extent.YMin + new_visible_extent.YMax) / 2
-                                
-                                if (e_min_x + e_max_x) / 2 < map_center_x:
-                                    left_count += 1
-                                else:
-                                    right_count += 1
-                                    
-                                if (e_min_y + e_max_y) / 2 < map_center_y:
-                                    bottom_count += 1
-                                else:
-                                    top_count += 1
-                            
-                            self.log_message(f"  Element distribution - Left: {left_count}, Right: {right_count}, Top: {top_count}, Bottom: {bottom_count}")
-                            
-                            # Adjust buffer to avoid crowded sides
-                            additional_buffer = max(buffer_x, buffer_y) * 2
-                            new_buffered_extent = arcpy.Extent(
-                                buffered_extent.XMin - (additional_buffer if right_count > left_count else 0),
-                                buffered_extent.YMin - (additional_buffer if top_count > bottom_count else 0),
-                                buffered_extent.XMax + (additional_buffer if left_count > right_count else 0),
-                                buffered_extent.YMax + (additional_buffer if bottom_count > top_count else 0)
+                            # Check if element actually overlaps the map frame
+                            overlaps = not (
+                                elem_x + elem_width <= map_x or        # Element completely to the left
+                                elem_x >= map_x + map_width or         # Element completely to the right
+                                elem_y + elem_height <= map_y or       # Element completely above
+                                elem_y >= map_y + map_height           # Element completely below
                             )
                             
-                            # Apply the adjusted extent
-                            buffered_extent = new_buffered_extent
-                            self.log_message(f"  Adjusted extent to avoid {len(element_areas)} layout elements")
-                except Exception as e:
-                    self.log_message(f"  Error during smart element avoidance: {str(e)}")
-            
-            # Set the final extent
-            try:
-                map_frame.camera.setExtent(buffered_extent)
-                self.log_message(f"  Zoomed to extent of {len(visible_layers)} layers for {dive_id}")
+                            if overlaps:
+                                elem_center_x = elem_x + elem_width / 2
+                                elem_center_y = elem_y + elem_height / 2
+                                
+                                # Calculate actual intersection area
+                                intersection_area = self._calculate_intersection_area(
+                                    map_x, map_y, map_x + map_width, map_y + map_height,
+                                    elem_x, elem_y, elem_x + elem_width, elem_y + elem_height
+                                )
+                                
+                                # Only include elements with significant intersection
+                                if intersection_area > 0:
+                                    conflicting_elements.append({
+                                        'element': element,
+                                        'x': elem_x,
+                                        'y': elem_y,
+                                        'width': elem_width,
+                                        'height': elem_height,
+                                        'center_x': elem_center_x,
+                                        'center_y': elem_center_y,
+                                        'type': type(element).__name__,
+                                        'intersection_area': intersection_area
+                                    })
+                                    
+                                    self.log_message(f"  CONFLICT: {element.name} ({type(element).__name__}) overlaps map area")
+                                    self.log_message(f"    Overlap area: {intersection_area:.0f} sq units")
+                                    
+                    except Exception as e:
+                        self.log_message(f"  Error analyzing element: {str(e)}")
+                        continue
+                
+                # Only adjust if there are actual conflicts
+                if conflicting_elements:
+                    self.log_message(f"  Found {len(conflicting_elements)} elements with actual overlaps")
+                    
+                    # Enhanced conflict calculation
+                    left_conflict = 0
+                    right_conflict = 0
+                    up_conflict = 0
+                    down_conflict = 0
+                    
+                    for elem in conflicting_elements:
+                        elem_center_x = elem['center_x']
+                        elem_center_y = elem['center_y']
+                        conflict_weight = elem['intersection_area']
+                        
+                        # Enhanced element type weighting
+                        type_multiplier = 1.0
+                        elem_type = elem['type']
+                        if "LegendElement" in elem_type:
+                            type_multiplier = 4.0  # Highest priority for legends
+                        elif "MapFrame" in elem_type:
+                            type_multiplier = 3.5  # Very high priority for inset maps
+                        elif "MapSurroundElement" in elem_type:
+                            # Scale bars and north arrows - only high priority if significant overlap
+                            if conflict_weight > (map_width * map_height * 0.1):  # More than 10% overlap
+                                type_multiplier = 2.0
+                            else:
+                                type_multiplier = 1.2  # Light weight for small overlaps
+                        elif "TextElement" in elem_type:
+                            type_multiplier = 2.5  # High priority for text labels
+                        elif "GraphicElement" in elem_type:
+                            type_multiplier = 1.5
+                        
+                        weighted_conflict = conflict_weight * type_multiplier
+                        
+                        # Determine which direction this element pushes content
+                        if elem_center_x < map_center_x:  # Element on left side
+                            right_conflict += weighted_conflict  # Push content right
+                        else:  # Element on right side
+                            left_conflict += weighted_conflict   # Push content left
+                        
+                        if elem_center_y < map_center_y:  # Element on bottom
+                            up_conflict += weighted_conflict     # Push content up
+                        else:  # Element on top
+                            down_conflict += weighted_conflict   # Push content down
+                    
+                    self.log_message(f"  Final conflict scores - Left: {left_conflict:.1f}, Right: {right_conflict:.1f}, "
+                                   f"Up: {up_conflict:.1f}, Down: {down_conflict:.1f}")
+                    
+                    # Calculate shifts to avoid conflicts
+                    base_shift_factor = 0.20
+                    
+                    # Calculate horizontal shift
+                    horizontal_shift = 0
+                    if left_conflict > right_conflict and left_conflict > 0:
+                        horizontal_shift = -base_shift_factor * (left_conflict / (left_conflict + right_conflict))
+                        self.log_message(f"  Shifting LEFT to avoid right-side elements")
+                    elif right_conflict > left_conflict and right_conflict > 0:
+                        horizontal_shift = base_shift_factor * (right_conflict / (left_conflict + right_conflict))
+                        self.log_message(f"  Shifting RIGHT to avoid left-side elements")
+                    
+                    # Calculate vertical shift
+                    vertical_shift = 0
+                    if up_conflict > down_conflict and up_conflict > 0:
+                        vertical_shift = base_shift_factor * (up_conflict / (up_conflict + down_conflict))
+                        self.log_message(f"  Shifting UP to avoid bottom elements")
+                    elif down_conflict > up_conflict and down_conflict > 0:
+                        vertical_shift = -base_shift_factor * (down_conflict / (up_conflict + down_conflict))
+                        self.log_message(f"  Shifting DOWN to avoid top elements")
+                    
+                    # Smart zoom out based on conflict severity
+                    zoom_out_factor = 1.0 + (len(conflicting_elements) * 0.12)  # 12% per conflict
+                    zoom_out_factor = min(zoom_out_factor, 1.6)  # Cap at 60% zoom out
+                    
+                    # Apply adjustments
+                    current_width = buffered_extent.width
+                    current_height = buffered_extent.height
+                    current_center_x = (buffered_extent.XMin + buffered_extent.XMax) / 2
+                    current_center_y = (buffered_extent.YMin + buffered_extent.YMax) / 2
+                    
+                    new_width = current_width * zoom_out_factor
+                    new_height = current_height * zoom_out_factor
+                    
+                    shift_x = current_width * horizontal_shift
+                    shift_y = current_height * vertical_shift
+                    
+                    new_center_x = current_center_x + shift_x
+                    new_center_y = current_center_y + shift_y
+                    
+                    adjusted_extent = arcpy.Extent(
+                        new_center_x - new_width / 2,
+                        new_center_y - new_height / 2,
+                        new_center_x + new_width / 2,
+                        new_center_y + new_height / 2
+                    )
+                    
+                    self.log_message(f"  Applied adjustments - H: {horizontal_shift:.3f}, V: {vertical_shift:.3f}")
+                    self.log_message(f"  Zoom factor: {zoom_out_factor:.2f}, Final shifts: X={shift_x:.0f}, Y={shift_y:.0f}")
+                    
+                    buffered_extent = adjusted_extent
+                    
+                else:
+                    self.log_message("  No actual overlaps detected - content is clear of all layout elements")
+                
             except Exception as e:
-                self.log_message(f"  Error setting extent: {str(e)}")
-                # Try an alternative approach if the first one fails
-                try:
-                    self.log_message("  Trying alternative extent setting method...")
-                    map_frame.camera = buffered_extent
-                    self.log_message("  Alternative extent setting succeeded")
-                except Exception as alt_e:
-                    self.log_message(f"  Alternative extent setting also failed: {str(alt_e)}")
-    
-    def update_extent_group_dropdown(self):
-        """Update the extent group dropdown with the selected layer groups"""
-        selected_groups = [key for key, var in self.layer_group_vars.items() if var.get()]
+                self.log_message(f"  Error during smart element avoidance: {str(e)}")
+                import traceback
+                self.log_message(f"  Traceback: {traceback.format_exc()}")
         
-        # Store current selection
-        current_selection = self.extent_group_var.get()
-        
-        # Update dropdown values
-        self.extent_group_dropdown['values'] = selected_groups
-        
-        # If there are selected groups
-        if selected_groups:
-            # If current selection is still valid, keep it
-            if current_selection in selected_groups:
-                self.extent_group_var.set(current_selection)
-            else:
-                # Otherwise select the first group
-                self.extent_group_var.set(selected_groups[0])
-        else:
-            # Clear the selection if no groups are selected
-            self.extent_group_var.set("")
-        
-        # Log the update
-        if selected_groups:
-            self.log_message(f"Updated extent control with {len(selected_groups)} selected layer groups")
+        # Set the final extent
+        try:
+            map_frame.camera.setExtent(buffered_extent)
+            self.log_message(f"  Successfully set extent for {dive_id} using {len(visible_layers)} layers")
+        except Exception as e:
+            self.log_message(f"  Error setting extent: {str(e)}")
+            # Try fallback method
+            try:
+                self.log_message("  Attempting fallback zoom to extent (no avoidance)")
+                map_frame.camera = buffered_extent
+                self.log_message("  Fallback zoom successful")
+            except Exception as alt_e:
+                self.log_message(f"  Fallback zoom also failed: {str(alt_e)}")
 
+    def on_layer_group_selection_changed(self):
+        """Handle changes in layer group selection"""
+        # This method can be used for any future functionality when layer group selection changes
+        # For now, it's just a placeholder to prevent the trace callback error
+        pass
 
-def main():
-    """Main function to run the application"""
+    def _calculate_intersection_area(self, x1_min, y1_min, x1_max, y1_max, x2_min, y2_min, x2_max, y2_max):
+        """Calculate the intersection area between two rectangles"""
+        # Calculate intersection bounds
+        intersection_x_min = max(x1_min, x2_min)
+        intersection_y_min = max(y1_min, y2_min)
+        intersection_x_max = min(x1_max, x2_max)
+        intersection_y_max = min(y1_max, y2_max)
+        
+        # Check if there's actually an intersection
+        if intersection_x_min >= intersection_x_max or intersection_y_min >= intersection_y_max:
+            return 0
+        
+        # Calculate area
+        width = intersection_x_max - intersection_x_min
+        height = intersection_y_max - intersection_y_min
+        return width * height
+
+# Run the application
+if __name__ == "__main__":
     root = tk.Tk()
     app = LayoutAutomatorApp(root)
     root.mainloop()
-
-
-if __name__ == "__main__":
-    main()
