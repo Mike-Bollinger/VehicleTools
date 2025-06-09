@@ -61,21 +61,84 @@ class LayoutAutomatorApp:
         self.dpi = tk.IntVar(value=300)
         self.project = None
         self.dive_pattern = re.compile(r'DIVE(\d+)', re.IGNORECASE)
+        self.running_in_arcpro = False
         
         # Store selected layer groups (checkboxes)
         self.layer_group_vars = {}
+        
+        # Detect if running in ArcPro
+        self.detect_arcpro_environment()
         
         # Create GUI
         self.create_gui()
         
         # Try to open current project
+        self.initialize_project()
+        
+        # Add these lines to your __init__ method:
+        self.last_progress_time = time.time()
+        self.processing_active = False
+    
+    def detect_arcpro_environment(self):
+        """Detect if we're running inside ArcPro"""
         try:
-            self.project = arcpy.mp.ArcGISProject("CURRENT")
-            self.project_path.set(self.project.filePath)
-            self.populate_layout_dropdown()
-            self.populate_layer_groups()
+            # Check if we can access the current project without specifying a path
+            current_proj = arcpy.mp.ArcGISProject("CURRENT")
+            if current_proj and current_proj.filePath:
+                self.running_in_arcpro = True
+                self.log_message("Detected running inside ArcGIS Pro environment")
+                return True
         except:
-            messagebox.showinfo("Note", "No ArcGIS Pro project currently open. Please open or select a project.")
+            pass
+        
+        self.running_in_arcpro = False
+        self.log_message("Running in standalone mode")
+        return False
+    
+    def initialize_project(self):
+        """Initialize project based on environment"""
+        try:
+            if self.running_in_arcpro:
+                # Running in ArcPro - use current project
+                self.project = arcpy.mp.ArcGISProject("CURRENT")
+                self.project_path.set(self.project.filePath)
+                self.log_message(f"Using current ArcPro project: {self.project.filePath}")
+                
+                # Add warning about ArcPro locks
+                self.show_arcpro_warning()
+                
+            else:
+                # Standalone mode - try to find a recent project or prompt user
+                self.project = None
+                self.log_message("Standalone mode - please select or load a project")
+            
+            if self.project:
+                self.populate_layout_dropdown()
+                self.populate_layer_groups()
+                
+        except Exception as e:
+            self.log_message(f"Error initializing project: {str(e)}")
+            if not self.running_in_arcpro:
+                messagebox.showinfo("Note", "No ArcGIS Pro project currently open. Please open or select a project.")
+    
+    def show_arcpro_warning(self):
+        """Show warning about ArcPro usage with tips"""
+        warning_msg = """RUNNING IN ARCGIS PRO - IMPORTANT TIPS:
+
+To avoid layer locking issues:
+• Close any layout views before running
+• Close any map views showing dive layers  
+• Minimize ArcPro interaction during processing
+• Consider using 'Refresh Project' if script stalls
+
+The script will attempt to handle locks automatically."""
+        
+        # Show in both messagebox and log
+        messagebox.showwarning("ArcPro Mode", warning_msg)
+        self.log_message("=== ARCGIS PRO MODE ACTIVATED ===")
+        for line in warning_msg.split('\n')[2:]:  # Skip the header
+            if line.strip():
+                self.log_message(f"  {line.strip()}")
     
     def create_gui(self):
         """Create the GUI elements"""
@@ -115,6 +178,7 @@ class LayoutAutomatorApp:
         ttk.Entry(project_frame, textvariable=self.project_path, width=50).grid(row=0, column=1, sticky=tk.W+tk.E, pady=5)
         ttk.Button(project_frame, text="Browse...", command=self.browse_project).grid(row=0, column=2, padx=5, pady=5)
         ttk.Button(project_frame, text="Load Project", command=self.load_project).grid(row=0, column=3, padx=5, pady=5)
+        ttk.Button(project_frame, text="Refresh Project", command=self.manual_refresh_project).grid(row=0, column=4, padx=5, pady=5)
         
         # Layout selection
         layout_frame = ttk.LabelFrame(main_frame, text="Layout Selection", padding="10")
@@ -402,9 +466,11 @@ class LayoutAutomatorApp:
         else:
             self.log_message(f"Found {len(self.layer_group_vars)} layer groups across {len(maps)} maps")
             
-    
- 
-
+    def on_layer_group_selection_changed(self):
+        """Handle changes in layer group selection"""
+        # This method can be used for any future functionality when layer group selection changes
+        # For now, it's just a placeholder to prevent the trace callback error
+        pass
     
     def analyze_selected_groups(self):
         """Analyze the selected layer groups to find dive numbers"""
@@ -474,7 +540,7 @@ class LayoutAutomatorApp:
         
     
     def start_processing(self):
-        """Start the processing in a background thread with timeout monitoring"""
+        """Enhanced start processing with ArcPro awareness"""
         if not self.project:
             messagebox.showerror("Error", "No project loaded")
             return
@@ -493,6 +559,19 @@ class LayoutAutomatorApp:
             messagebox.showerror("Error", "Please select at least one layer group")
             return
         
+        # ArcPro-specific checks
+        if self.running_in_arcpro:
+            if not self.check_for_open_views():
+                return
+            
+            # Additional ArcPro warning
+            if not messagebox.askyesno("ArcPro Processing", 
+                "Processing will modify layer visibility in your current project.\n\n"
+                "This may affect your current ArcPro session.\n"
+                "Make sure to save your project first if needed.\n\n"
+                "Continue?"):
+                return
+        
         # Start processing in a background thread
         self.status_var.set("Processing...")
         
@@ -506,289 +585,349 @@ class LayoutAutomatorApp:
         watchdog_thread.start()
         
         # Start the actual processing
-        processing_thread = threading.Thread(target=self.process_maps, args=(selected_groups,))
+        processing_thread = threading.Thread(target=self.process_maps_enhanced, args=(selected_groups,))
         processing_thread.daemon = True
         processing_thread.start()
-    
+
     def _monitor_progress(self):
-        """Monitor progress and detect if processing hangs"""
-        warning_count = 0
+        """Monitor processing progress and detect hangs"""
         while self.processing_active:
-            time.sleep(60)  # Check every minute instead of 30 seconds
+            time.sleep(30)  # Check every 30 seconds
             
-            # If more than 10 minutes have passed without a log update, show a warning
-            if time.time() - self.last_progress_time > 600:  # 10 minutes
-                warning_count += 1
-                self.log_message(f"WARNING: Processing appears to be slow or stuck... ({warning_count})")
-                
-                # Force an update to the GUI
-                self.root.update()
-                
-                # After 3 warnings (30 minutes of inactivity), offer to abort
-                if warning_count >= 3:
-                    try:
-                        self.root.after(0, lambda: self._show_abort_dialog())
-                        # Reset counter after showing dialog
-                        warning_count = 0
-                    except:
-                        pass
+            current_time = time.time()
+            time_since_progress = current_time - self.last_progress_time
             
-            # Reset the timer to avoid repeated warnings
-            self.last_progress_time = time.time()
-    
-    def _show_abort_dialog(self):
-        """Show a dialog asking if user wants to abort processing"""
-        if messagebox.askyesno("Processing Stuck", 
-                          "Processing appears to be stuck for several minutes. Would you like to abort?"):
-            self.log_message("User requested abort of processing")
-            self.processing_active = False
-            self.status_var.set("Aborted by user")
-    
-    # 2. Add progress checkpoints in the process_maps method
-    def process_maps(self, selected_groups):
-        """Process the maps for each dive number with a workaround for layout access"""
+            if time_since_progress > 300: # 5 minutes without progress
+                self.log_message("WARNING: No progress detected for 5 minutes - processing may be stuck")
+                self.log_message("Consider using 'Refresh Project' button if processing appears hung")
+                
+                # Reset the timer to avoid spam
+                self.last_progress_time = current_time
+
+    def process_maps_enhanced(self, selected_groups):
+        """Enhanced processing with ArcPro lock handling"""
         try:
-            self.log_message("Starting process_maps function...")
+            self.log_message("Starting enhanced map processing...")
+            
+            if self.running_in_arcpro:
+                self.log_message("Using ArcPro-aware processing mode")
             
             layout_name = self.layout_name.get()
             output_folder = self.output_folder.get()
             dpi = self.dpi.get()
-            
-            self.log_message(f"Parameters: Layout={layout_name}, Output={output_folder}, DPI={dpi}")
             
             # Create output folder if it doesn't exist
             if not os.path.exists(output_folder):
                 os.makedirs(output_folder)
                 self.log_message(f"Created output folder: {output_folder}")
             
-            # WORKAROUND: Skip direct layout lookup until needed
-            self.log_message(f"Will use layout: {layout_name} (deferring actual layout access)")
-            
-            # Find all dive numbers across all selected groups
-            self.log_message(f"Scanning {len(selected_groups)} layer groups to find all dive numbers...")
-            all_dive_numbers = set()
-            layer_count = 0
-            
-            # Process each group to find dive numbers
-            for i, group_key in enumerate(selected_groups):
-                self.log_message(f"Scanning group {i+1}/{len(selected_groups)}: {group_key}")
-                map_name, group_name = group_key.split(':', 1)
-                
-                # Direct lookup for maps
-                map_obj = None
-                for m in self.project.listMaps():
-                    if m.name == map_name:
-                        map_obj = m
-                        break
-                
-                if not map_obj:
-                    self.log_message(f"  Map not found: {map_name}")
-                    continue
-                
-                # Find the group layer
-                group_layer = None
-                for layer in map_obj.listLayers():
-                    if layer.name == group_name:
-                        group_layer = layer
-                        break
-                
-                if not group_layer:
-                    self.log_message(f"  Group layer not found: {group_name}")
-                    continue
-                
-                # Find dive numbers in this group
-                self.log_message(f"  Scanning layers in group: {group_name}")
-                group_dive_numbers = set()
-                group_layer_count = 0
-                
-                # Set a checkpoint for GUI updates
-                last_update = time.time()
-                
-                for layer in group_layer.listLayers():
-                    group_layer_count += 1
-                    layer_count += 1
-                    
-                    # Update progress every 50 layers or 2 seconds
-                    if group_layer_count % 50 == 0 or time.time() - last_update > 2:
-                        self.log_message(f"  Scanned {group_layer_count} layers in current group, {layer_count} total...")
-                        last_update = time.time()
-                        
-                    match = self.dive_pattern.search(layer.name)
-                    if match:
-                        dive_number = match.group(1)
-                        group_dive_numbers.add(dive_number)
-                
-                self.log_message(f"  Finished scanning {group_layer_count} layers, found {len(group_dive_numbers)} dive numbers")
-                all_dive_numbers.update(group_dive_numbers)
+            # Find all dive numbers (same as before)
+            all_dive_numbers = self.collect_dive_numbers(selected_groups)
             
             if not all_dive_numbers:
                 self.log_message("No dive layers found in the selected groups")
                 self.status_var.set("No dive layers found")
                 return
             
-            # Sort dive numbers
             sorted_dives = sorted(all_dive_numbers, key=int)
-            self.log_message(f"Found {len(sorted_dives)} total dive numbers: {', '.join(sorted_dives)}")
-            self.log_message("Starting map generation process...")
-            
-            # Process each dive number
             total_dives = len(sorted_dives)
-            self.log_message(f"Starting processing of {total_dives} dive maps...")
+            self.log_message(f"Processing {total_dives} dive maps...")
             
+            # Pre-collect all layers to minimize repeated searches
+            all_dive_layers = self.pre_collect_dive_layers(selected_groups)
+            
+            # Process each dive
             for i, dive_number in enumerate(sorted_dives, 1):
                 dive_id = f"DIVE{dive_number}"
                 self.log_message(f"\n[{i}/{total_dives}] *** Starting {dive_id} ***")
                 
-                # Update the status bar with more detailed info
                 progress_pct = int((i / total_dives) * 100)
                 self.status_var.set(f"Processing {dive_id} ({i}/{total_dives}) - {progress_pct}% complete")
                 
-                # Force a GUI update
-                self.root.update_idletasks()
-                
-                # Turn off all dive layers first
-                self.log_message(f"Turning off all dive layers...")
-                for group_key in selected_groups:
-                    map_name, group_name = group_key.split(':', 1)
-                    
-                    map_obj = None
-                    for m in self.project.listMaps():
-                        if m.name == map_name:
-                            map_obj = m
-                            break
-                    
-                    if not map_obj:
-                        continue
-                    
-                    # Find the group layer
-                    group_layer = None
-                    for layer in map_obj.listLayers():
-                        if layer.name == group_name:
-                            group_layer = layer
-                            break
-                    
-                    if not group_layer:
-                        continue
-                    
-                    # Turn off all dive layers in this group
-                    for layer in group_layer.listLayers():
-                        if hasattr(layer, 'visible') and self.dive_pattern.search(layer.name):
-                            layer.visible = False
-                
-                # Now turn on only the layers for this dive number
-                self.log_message(f"Activating layers for {dive_id}...")
-                active_layers = []
-                active_map_obj = None  # Keep track of which map has the active layers
-                
-                for group_key in selected_groups:
-                    map_name, group_name = group_key.split(':', 1)
-                    
-                    map_obj = None
-                    for m in self.project.listMaps():
-                        if m.name == map_name:
-                            map_obj = m
-                            break
-                    
-                    if not map_obj:
-                        continue
-                    
-                    # Find the group layer
-                    group_layer = None
-                    for layer in map_obj.listLayers():
-                        if layer.name == group_name:
-                            group_layer = layer
-                            break
-                    
-                    if not group_layer:
-                        continue
-                    
-                    # Turn on only the layers for this dive
-                    for layer in group_layer.listLayers():
-                        if hasattr(layer, 'visible') and dive_id.upper() in layer.name.upper():
-                            layer.visible = True
-                            active_layers.append(f"{layer.name} (in {group_name})")
-                            active_map_obj = map_obj  # Track the map with active layers
-                
-                if not active_layers:
-                    self.log_message(f"  No layers found for {dive_id}, skipping to next dive")
-                    continue
-                
-                self.log_message(f"  Activated {len(active_layers)} layers for {dive_id}:")
-                for layer_name in active_layers:
-                    self.log_message(f"    - {layer_name}")
-                
-                # WORKAROUND: Access the layout right before we need to use it
-                # This avoids keeping a reference to the layout object for extended periods
-                self.log_message(f"Accessing layout {layout_name} for current dive...")
-                layout = None
-                
                 try:
-                    # Try to get the layout by name
-                    layout = self.project.listLayouts(layout_name)[0]
-                    self.log_message(f"Successfully accessed layout: {layout_name}")
-                except Exception as e:
-                    self.log_message(f"Error accessing layout: {str(e)}")
-                    self.log_message("Attempting to access layout through alternative method...")
+                    # Process this dive with enhanced error handling
+                    success = self.process_single_dive_enhanced(dive_id, all_dive_layers, layout_name, output_folder, dpi)
                     
-                    # Fallback: Try to get layout by index if available
-                    try:
-                        layouts = list(self.project.listLayouts())
-                        for l in layouts:
-                            if l.name == layout_name:
-                                layout = l
-                                self.log_message(f"Found layout through manual search")
-                                break
-                    except Exception as alt_error:
-                        self.log_message(f"Alternative layout access also failed: {str(alt_error)}")
-                
-                if not layout:
-                    self.log_message(f"Could not access layout '{layout_name}' for export, skipping dive {dive_id}")
-                    continue
-                
-                # Zoom to the dive layers extent
-                self.log_message(f"Zooming to extent of {dive_id} layers...")
-                try:
-                    if active_map_obj:
-                        self.zoom_to_active_layers(layout, active_map_obj, dive_id)
+                    if success:
+                        self.log_message(f"*** Completed {dive_id} successfully ***")
                     else:
-                        self.log_message("No active map object found for zooming")
+                        self.log_message(f"*** {dive_id} completed with issues ***")
+                        
                 except Exception as e:
-                    self.log_message(f"  Error zooming to layers: {str(e)}")
+                    self.log_message(f"*** Error processing {dive_id}: {str(e)} ***")
+                    
+                    # In ArcPro mode, try to recover from errors
+                    if self.running_in_arcpro:
+                        self.log_message("Attempting error recovery...")
+                        try:
+                            self.refresh_project_connection()
+                        except:
+                            pass
                 
-                # Export the layout
-                output_file = os.path.join(output_folder, f"{dive_id}.jpg")
-                self.log_message(f"Exporting {dive_id} to JPEG...")
-                try:
-                    layout.exportToJPEG(output_file, resolution=dpi)
-                    self.log_message(f"  Successfully exported {dive_id} to {output_file}")
-                    
-                    # Release the layout reference immediately after use
-                    layout = None
-                    
-                    # Force garbage collection to free memory
-                    import gc
-                    gc.collect()
-                    
-                except Exception as e:
-                    self.log_message(f"  Error exporting map: {str(e)}")
-                
-                # Update at the end of each dive processing
-                self.log_message(f"*** Completed {dive_id} ({i}/{total_dives}) ***")
-                self.root.update()  # Full update to process any pending events
+                # Update GUI
+                self.root.update()
             
-            self.processing_active = False  # Stop the watchdog
+            self.processing_active = False
             self.log_message("\nProcessing complete!")
             self.status_var.set("Processing complete")
             messagebox.showinfo("Success", f"Generated {len(sorted_dives)} maps in {output_folder}")
-        
+            
         except Exception as e:
             error_message = f"Error processing maps: {str(e)}"
             self.log_message(error_message)
             self.status_var.set("Error")
             messagebox.showerror("Error", error_message)
-    
+            self.processing_active = False
+
+    def collect_dive_numbers(self, selected_groups):
+        """Collect all unique dive numbers from selected groups"""
+        all_dive_numbers = set()
+        
+        for group_key in selected_groups:
+            map_name, group_name = group_key.split(':', 1)
+            
+            # Get the map object
+            map_obj = None
+            for m in self.project.listMaps():
+                if m.name == map_name:
+                    map_obj = m
+                    break
+            
+            if not map_obj:
+                continue
+            
+            # Find the group layer
+            group_layer = None
+            for layer in map_obj.listLayers():
+                if layer.name == group_name:
+                    group_layer = layer
+                    break
+            
+            if not group_layer:
+                continue
+            
+            # Find dive numbers in this group
+            for layer in group_layer.listLayers():
+                match = self.dive_pattern.search(layer.name)
+                if match:
+                    dive_number = match.group(1)
+                    all_dive_numbers.add(dive_number)
+        
+        return all_dive_numbers
+
+    def pre_collect_dive_layers(self, selected_groups):
+        """Pre-collect all dive layers to minimize repeated searches"""
+        all_dive_layers = []
+        
+        for group_key in selected_groups:
+            map_name, group_name = group_key.split(':', 1)
+            
+            # Get the map object
+            map_obj = None
+            for m in self.project.listMaps():
+                if m.name == map_name:
+                    map_obj = m
+                    break
+            
+            if not map_obj:
+                continue
+            
+            # Find the group layer
+            group_layer = None
+            for layer in map_obj.listLayers():
+                if layer.name == group_name:
+                    group_layer = layer
+                    break
+            
+            if not group_layer:
+                continue
+            
+            # Collect all layers from this group
+            for layer in group_layer.listLayers():
+                if self.dive_pattern.search(layer.name):
+                    all_dive_layers.append({
+                        'layer': layer,
+                        'map_obj': map_obj,
+                        'group_name': group_name
+                    })
+        
+        return all_dive_layers
+
+    def refresh_project_connection(self):
+        """Refresh the project connection to clear locks"""
+        try:
+            if self.running_in_arcpro:
+                self.log_message("Refreshing project connection to clear potential locks...")
+                
+                # Force garbage collection first
+                import gc
+                gc.collect()
+                
+                # Try to refresh the project reference
+                old_project_path = self.project.filePath if self.project else None
+                
+                # Clear the current reference
+                self.project = None
+                gc.collect()
+                
+                # Small delay to allow ArcPro to release locks
+                time.sleep(0.5)
+                
+                # Reconnect to current project
+                self.project = arcpy.mp.ArcGISProject("CURRENT")
+                
+                if old_project_path and self.project.filePath == old_project_path:
+                    self.log_message("  Project connection refreshed successfully")
+                    return True
+                else:
+                    self.log_message("  Warning: Project path changed during refresh")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.log_message(f"  Error refreshing project connection: {str(e)}")
+            return False
+
+    def safe_layer_operation(self, operation_func, *args, max_retries=3, **kwargs):
+        """Safely perform layer operations with retry logic"""
+        for attempt in range(max_retries):
+            try:
+                return operation_func(*args, **kwargs)
+                
+            except Exception as e:
+                error_msg = str(e).lower()
+                
+                # Check if it's a lock-related error
+                if any(lock_indicator in error_msg for lock_indicator in 
+                       ['lock', 'locked', 'in use', 'cannot access', 'permission denied']):
+                    
+                    self.log_message(f"  Lock detected on attempt {attempt + 1}: {str(e)}")
+                    
+                    if attempt < max_retries - 1:  # Don't refresh on last attempt
+                        self.log_message(f"  Attempting to clear locks and retry...")
+                        
+                        # Try to refresh project connection
+                        if not self.refresh_project_connection():
+                            self.log_message(f"  Failed to refresh connection, continuing anyway...")
+                        
+                        # Progressive delay
+                        delay = (attempt + 1) * 2
+                        self.log_message(f"  Waiting {delay} seconds before retry...")
+                        time.sleep(delay)
+                    else:
+                        self.log_message(f"  All retry attempts failed for lock issue")
+                        raise
+                else:
+                    # Non-lock related error, don't retry
+                    raise
+        
+        # If we get here, all retries failed
+        raise Exception(f"Operation failed after {max_retries} attempts")
+
+    def check_for_open_views(self):
+        """Check for open views that might cause locks and warn user"""
+        try:
+            if not self.running_in_arcpro:
+                return True
+            
+            # Check for open layout views
+            layouts = list(self.project.listLayouts())
+            
+            # This is tricky - we can't directly detect if views are open in ArcPro
+            # But we can warn the user and provide guidance
+            
+            self.log_message("Checking for potential view conflicts...")
+            
+            # Look for the target layout
+            target_layout_name = self.layout_name.get()
+            if target_layout_name:
+                target_layout = None
+                for layout in layouts:
+                    if layout.name == target_layout_name:
+                        target_layout = layout
+                        break
+                
+                if target_layout:
+                    self.log_message(f"Target layout '{target_layout_name}' found")
+                    
+                    # Warn user about potential conflicts
+                    if messagebox.askyesno("View Check", 
+                        f"About to process layout '{target_layout_name}'.\n\n"
+                        "For best results:\n"
+                        "• Close any open layout views\n"
+                        "• Close any map views showing dive layers\n"
+                        "• Minimize other ArcPro interactions\n\n"
+                        "Continue with processing?"):
+                        return True
+                    else:
+                        return False
+            
+            return True
+            
+        except Exception as e:
+            self.log_message(f"Error checking for open views: {str(e)}")
+            return True  # Proceed anyway
+
+    def safe_set_layer_visibility(self, layer, visible, dive_id=None):
+        """Safely set layer visibility with lock handling"""
+        def set_visibility():
+            if hasattr(layer, 'visible'):
+                layer.visible = visible
+                return True
+            return False
+        
+        try:
+            # Use the safe operation wrapper
+            result = self.safe_layer_operation(set_visibility)
+            
+            if result:
+                status = "visible" if visible else "hidden"
+                layer_info = f"{layer.name}"
+                if dive_id:
+                    layer_info += f" (for {dive_id})"
+                # Only log successful visibility changes for important operations
+                if visible:  # Only log when making layers visible to reduce noise
+                    self.log_message(f"    Set {layer_info} to {status}")
+            
+            return result
+            
+        except Exception as e:
+            self.log_message(f"    Failed to set visibility for {layer.name}: {str(e)}")
+            return False
+
+    def batch_set_layer_visibility(self, layers_and_states, dive_id=None):
+        """Set visibility for multiple layers in batch with progress tracking"""
+        total_layers = len(layers_and_states)
+        successful = 0
+        failed = 0
+        
+        self.log_message(f"Setting visibility for {total_layers} layers...")
+        
+        for i, (layer, visible) in enumerate(layers_and_states):
+            try:
+                if self.safe_set_layer_visibility(layer, visible, dive_id):
+                    successful += 1
+                else:
+                    failed += 1
+                    
+                # Progress update every 50 layers or at the end
+                if (i + 1) % 50 == 0 or (i + 1) == total_layers:
+                    self.log_message(f"  Progress: {i + 1}/{total_layers} layers processed")
+                    
+                    # Force a brief pause every 100 layers to allow ArcPro to catch up
+                    if (i + 1) % 100 == 0:
+                        time.sleep(0.1)
+                        
+            except Exception as e:
+                failed += 1
+                self.log_message(f"  Error with layer {layer.name}: {str(e)}")
+        
+        self.log_message(f"  Visibility update complete: {successful} successful, {failed} failed")
+        return successful, failed
+
     def zoom_to_active_layers(self, layout, active_map_obj, dive_id):
-        """Zoom to the extent of active layers with smart element avoidance"""
+        """Zoom to the extent of active layers with improved scaling and positioning"""
         # Check if we should use fixed extent
         if self.use_fixed_extent.get():
             self.log_message("  Using fixed extent (not zooming to features)")
@@ -815,7 +954,7 @@ class LayoutAutomatorApp:
         self.log_message(f"  Getting extent from all visible layers in {len(selected_groups)} selected groups")
         visible_layers = []
         
-        # Collect all visible dive layers from all selected groups
+        # Collect layers from each selected group
         for group_key in selected_groups:
             map_name, group_name = group_key.split(':', 1)
             
@@ -837,18 +976,16 @@ class LayoutAutomatorApp:
                     break
             
             if not group_layer:
+                self.log_message(f"Group layer not found: {group_name}")
                 continue
             
             # Get ALL visible layers for this dive from this group
             group_layers = []
             for layer in group_layer.listLayers():
                 if hasattr(layer, 'visible') and layer.visible and dive_id.upper() in layer.name.upper():
-                    # Include any layer type that has a valid extent
                     try:
-                        # FIXED: Proper extent validation
                         layer_extent = arcpy.Describe(layer).extent
                         
-                        # Check if extent is valid by examining its dimensions
                         if (layer_extent and 
                             hasattr(layer_extent, 'XMin') and 
                             hasattr(layer_extent, 'XMax') and
@@ -856,18 +993,17 @@ class LayoutAutomatorApp:
                             hasattr(layer_extent, 'YMax') and
                             layer_extent.XMax > layer_extent.XMin and 
                             layer_extent.YMax > layer_extent.YMin):
-                        
+                
                             group_layers.append(layer)
                             self.log_message(f"    Including {layer.name} from {group_name}")
-                            self.log_message(f"      Extent: ({layer_extent.XMin:.0f}, {layer_extent.YMin:.0f}) to ({layer_extent.XMax:.0f}, {layer_extent.YMax:.0f})")
                         else:
                             self.log_message(f"    Skipping {layer.name} (invalid extent dimensions)")
                         
                     except Exception as e:
                         self.log_message(f"    Skipping {layer.name} (extent error): {str(e)}")
-            
-            visible_layers.extend(group_layers)
-            self.log_message(f"    {group_name}: {len(group_layers)} layers with valid extents")
+        
+        visible_layers.extend(group_layers)
+        self.log_message(f"    {group_name}: {len(group_layers)} layers with valid extents")
 
         if not visible_layers:
             self.log_message(f"  No visible layers with valid extents found for {dive_id}")
@@ -880,7 +1016,6 @@ class LayoutAutomatorApp:
             try:
                 layer_extent = arcpy.Describe(layer).extent
                 
-                # FIXED: Proper extent validation and combination
                 if (layer_extent and 
                     hasattr(layer_extent, 'XMin') and 
                     layer_extent.XMax > layer_extent.XMin and 
@@ -889,38 +1024,67 @@ class LayoutAutomatorApp:
                     if extent is None:
                         extent = layer_extent
                         self.log_message(f"    Base extent from: {layer.name}")
-                        self.log_message(f"      Extent: ({extent.XMin:.0f}, {extent.YMin:.0f}) to ({extent.XMax:.0f}, {extent.YMax:.0f})")
                     else:
                         # Expand the extent to include this layer
-                        original_area = extent.width * extent.height
-                        
-                        # FIXED: Proper extent union
                         new_xmin = min(extent.XMin, layer_extent.XMin)
                         new_ymin = min(extent.YMin, layer_extent.YMin)
                         new_xmax = max(extent.XMax, layer_extent.XMax)
                         new_ymax = max(extent.YMax, layer_extent.YMax)
                         
                         extent = arcpy.Extent(new_xmin, new_ymin, new_xmax, new_ymax)
-                        
-                        new_area = extent.width * extent.height
-                        if new_area > original_area * 1.1:  # Only log if significant expansion
-                            self.log_message(f"    Expanded extent for: {layer.name}")
-                            self.log_message(f"      New extent: ({extent.XMin:.0f}, {extent.YMin:.0f}) to ({extent.XMax:.0f}, {extent.YMax:.0f})")
-                            
+                
             except Exception as e:
                 self.log_message(f"  Error getting extent for {layer.name}: {str(e)}")
         
-        # FIXED: Better extent validation
         if not extent or extent.width <= 0 or extent.height <= 0:
             self.log_message(f"  Could not calculate valid extent for {dive_id}")
             return
         
-        # Apply buffer percentage
-        buffer_pct = self.buffer_percentage.get() / 100.0
-        buffer_x = extent.width * buffer_pct
-        buffer_y = extent.height * buffer_pct
+        # Add minimum extent size to prevent tiny extents
+        min_extent_size = 0.01  # Minimum size in map units
+        if extent.width < min_extent_size:
+            center_x = (extent.XMin + extent.XMax) / 2
+            extent = arcpy.Extent(
+                center_x - min_extent_size/2,
+                extent.YMin,
+                center_x + min_extent_size/2,
+                extent.YMax
+            )
+            self.log_message(f"  Adjusted width to minimum size: {min_extent_size}")
+
+        if extent.height < min_extent_size:
+            center_y = (extent.YMin + extent.YMax) / 2
+            extent = arcpy.Extent(
+                extent.XMin,
+                center_y - min_extent_size/2,
+                extent.XMax,
+                center_y + min_extent_size/2
+            )
+            self.log_message(f"  Adjusted height to minimum size: {min_extent_size}")
         
-        # Create initial buffered extent
+        # Get map frame boundaries for element analysis
+        map_x = 0
+        map_y = 0
+        map_width = 100
+        map_height = 100
+        
+        try:
+            map_x = map_frame.elementPositionX
+            map_y = map_frame.elementPositionY
+            map_width = map_frame.elementWidth
+            map_height = map_frame.elementHeight
+            self.log_message(f"  Main map frame: {map_width:.1f} x {map_height:.1f} at ({map_x:.1f}, {map_y:.1f})")
+        except Exception as e:
+            self.log_message(f"  Warning: Could not get map frame dimensions: {str(e)}")
+        
+        # CRITICAL FIX: Apply buffer to create buffered_extent BEFORE element analysis
+        base_buffer_pct = self.buffer_percentage.get() / 100.0
+        
+        # Create initial buffered extent with buffer percentage
+        buffer_x = extent.width * base_buffer_pct
+        buffer_y = extent.height * base_buffer_pct
+        
+        # Create the buffered extent - THIS WAS MISSING BEFORE
         buffered_extent = arcpy.Extent(
             extent.XMin - buffer_x,
             extent.YMin - buffer_y,
@@ -928,233 +1092,277 @@ class LayoutAutomatorApp:
             extent.YMax + buffer_y
         )
         
-        self.log_message(f"  Initial extent: {extent.width:.0f} x {extent.height:.0f} units")
-        self.log_message(f"  Buffered extent: {buffered_extent.width:.0f} x {buffered_extent.height:.0f} units (+{buffer_pct*100:.0f}%)")
+        self.log_message(f"  Initial extent: {extent.width:.1f} x {extent.height:.1f} units")
+        self.log_message(f"  Applied {base_buffer_pct*100:.0f}% buffer: {buffer_x:.1f} x {buffer_y:.1f} units")
         
         # Apply smart element avoidance if enabled
         if self.avoid_elements.get():
             try:
-                self.log_message("  Applying smart element avoidance...")
-                
-                # Get elements by type
-                text_elements = list(layout.listElements("TEXT_ELEMENT"))
-                graphic_elements = list(layout.listElements("GRAPHIC_ELEMENT"))
+                self.log_message("  Analyzing layout elements - focusing on Legend, Inset Map, and Rectangle only")
+        
+                # Get ONLY the critical elements we want to avoid
                 legend_elements = list(layout.listElements("LEGEND_ELEMENT"))
-                mapsurround_elements = list(layout.listElements("MAPSURROUND_ELEMENT"))
-                mapframe_elements = [mf for mf in layout.listElements("MAPFRAME_ELEMENT") if mf != map_frame]
-                picture_elements = list(layout.listElements("PICTURE_ELEMENT"))
-                
-                # Set initial centered extent
-                try:
-                    map_frame.camera.setExtent(buffered_extent)
-                    self.log_message("  Set initial centered extent")
-                except Exception as e:
-                    self.log_message(f"  Warning: Initial extent setting failed: {str(e)}")
-                    # Try fallback method
-                    try:
-                        map_frame.camera = buffered_extent
-                        self.log_message("  Fallback extent setting succeeded")
-                    except Exception as e2:
-                        self.log_message(f"  Fallback extent setting also failed: {str(e2)}")
-                        return
-                
-                # Get map frame boundaries
-                map_x = map_frame.elementPositionX
-                map_y = map_frame.elementPositionY
-                map_width = map_frame.elementWidth
-                map_height = map_frame.elementHeight
-                map_center_x = map_x + map_width / 2
-                map_center_y = map_y + map_height / 2
-                
-                self.log_message(f"  Map frame: ({map_x:.0f}, {map_y:.0f}) size: {map_width:.0f} x {map_height:.0f}")
-                
-                # Check which elements actually intersect with content area
-                conflicting_elements = []
-                all_elements = []
-                all_elements.extend(text_elements)
-                all_elements.extend(graphic_elements)
-                all_elements.extend(legend_elements)
-                all_elements.extend(mapsurround_elements)
-                all_elements.extend(mapframe_elements)
-                all_elements.extend(picture_elements)
-                
-                self.log_message(f"  Checking {len(all_elements)} layout elements for intersections...")
-                
-                for element in all_elements:
+                inset_mapframes = [mf for mf in layout.listElements("MAPFRAME_ELEMENT") if mf != map_frame]
+        
+                # Find the Rectangle element by name or type
+                rectangle_element = []
+                for element in layout.listElements("GRAPHIC_ELEMENT"):
+                    if element.name.lower() == "rectangle" or "rectangle" in element.name.lower():
+                        rectangle_element = [element]
+                        break
+            
+                # ONLY focus on these three critical elements
+                critical_elements = []
+                critical_elements.extend(legend_elements)
+                critical_elements.extend(inset_mapframes)
+                critical_elements.extend(rectangle_element)
+        
+                self.log_message(f"  Found {len(critical_elements)} critical elements to avoid")
+        
+                # Track element positions
+                legend_pos = None
+                inset_pos = None
+                rectangle_pos = None
+        
+                # Analyze elements for positioning
+                for element in critical_elements:
                     try:
                         if hasattr(element, 'elementPositionX') and hasattr(element, 'elementPositionY'):
                             elem_x = element.elementPositionX
                             elem_y = element.elementPositionY
                             elem_width = element.elementWidth
                             elem_height = element.elementHeight
-                            
-                            # Check if element actually overlaps the map frame
-                            overlaps = not (
-                                elem_x + elem_width <= map_x or        # Element completely to the left
-                                elem_x >= map_x + map_width or         # Element completely to the right
-                                elem_y + elem_height <= map_y or       # Element completely above
-                                elem_y >= map_y + map_height           # Element completely below
-                            )
-                            
-                            if overlaps:
-                                elem_center_x = elem_x + elem_width / 2
-                                elem_center_y = elem_y + elem_height / 2
-                                
-                                # Calculate actual intersection area
-                                intersection_area = self._calculate_intersection_area(
-                                    map_x, map_y, map_x + map_width, map_y + map_height,
-                                    elem_x, elem_y, elem_x + elem_width, elem_y + elem_height
-                                )
-                                
-                                # Only include elements with significant intersection
-                                if intersection_area > 0:
-                                    conflicting_elements.append({
-                                        'element': element,
-                                        'x': elem_x,
-                                        'y': elem_y,
-                                        'width': elem_width,
-                                        'height': elem_height,
-                                        'center_x': elem_center_x,
-                                        'center_y': elem_center_y,
-                                        'type': type(element).__name__,
-                                        'intersection_area': intersection_area
-                                    })
-                                    
-                                    self.log_message(f"  CONFLICT: {element.name} ({type(element).__name__}) overlaps map area")
-                                    self.log_message(f"    Overlap area: {intersection_area:.0f} sq units")
-                                    
+                            elem_center_x = elem_x + elem_width/2
+                            elem_center_y = elem_y + elem_height/2
+                            elem_type = type(element).__name__
+                    
+                            # Store positions of key elements
+                            if "LegendElement" in elem_type:
+                                legend_pos = (elem_center_x, elem_center_y)
+                                self.log_message(f"    LEGEND at ({elem_center_x:.1f}, {elem_center_y:.1f})")
+                            elif "MapFrame" in elem_type and element != map_frame:
+                                inset_pos = (elem_center_x, elem_center_y)
+                                self.log_message(f"    INSET MAP at ({elem_center_x:.1f}, {elem_center_y:.1f})")
+                            elif "GraphicElement" in elem_type and "rectangle" in element.name.lower():
+                                rectangle_pos = (elem_center_x, elem_center_y)
+                                self.log_message(f"    RECTANGLE at ({elem_center_x:.1f}, {elem_center_y:.1f})")
                     except Exception as e:
                         self.log_message(f"  Error analyzing element: {str(e)}")
-                        continue
-                
-                # Only adjust if there are actual conflicts
-                if conflicting_elements:
-                    self.log_message(f"  Found {len(conflicting_elements)} elements with actual overlaps")
-                    
-                    # Enhanced conflict calculation
-                    left_conflict = 0
-                    right_conflict = 0
-                    up_conflict = 0
-                    down_conflict = 0
-                    
-                    for elem in conflicting_elements:
-                        elem_center_x = elem['center_x']
-                        elem_center_y = elem['center_y']
-                        conflict_weight = elem['intersection_area']
-                        
-                        # Enhanced element type weighting
-                        type_multiplier = 1.0
-                        elem_type = elem['type']
-                        if "LegendElement" in elem_type:
-                            type_multiplier = 4.0  # Highest priority for legends
-                        elif "MapFrame" in elem_type:
-                            type_multiplier = 3.5  # Very high priority for inset maps
-                        elif "MapSurroundElement" in elem_type:
-                            # Scale bars and north arrows - only high priority if significant overlap
-                            if conflict_weight > (map_width * map_height * 0.1):  # More than 10% overlap
-                                type_multiplier = 2.0
-                            else:
-                                type_multiplier = 1.2  # Light weight for small overlaps
-                        elif "TextElement" in elem_type:
-                            type_multiplier = 2.5  # High priority for text labels
-                        elif "GraphicElement" in elem_type:
-                            type_multiplier = 1.5
-                        
-                        weighted_conflict = conflict_weight * type_multiplier
-                        
-                        # Determine which direction this element pushes content
-                        if elem_center_x < map_center_x:  # Element on left side
-                            right_conflict += weighted_conflict  # Push content right
-                        else:  # Element on right side
-                            left_conflict += weighted_conflict   # Push content left
-                        
-                        if elem_center_y < map_center_y:  # Element on bottom
-                            up_conflict += weighted_conflict     # Push content up
-                        else:  # Element on top
-                            down_conflict += weighted_conflict   # Push content down
-                    
-                    self.log_message(f"  Final conflict scores - Left: {left_conflict:.1f}, Right: {right_conflict:.1f}, "
-                                   f"Up: {up_conflict:.1f}, Down: {down_conflict:.1f}")
-                    
-                    # Calculate shifts to avoid conflicts
-                    base_shift_factor = 0.20
-                    
-                    # Calculate horizontal shift
-                    horizontal_shift = 0
-                    if left_conflict > right_conflict and left_conflict > 0:
-                        horizontal_shift = -base_shift_factor * (left_conflict / (left_conflict + right_conflict))
-                        self.log_message(f"  Shifting LEFT to avoid right-side elements")
-                    elif right_conflict > left_conflict and right_conflict > 0:
-                        horizontal_shift = base_shift_factor * (right_conflict / (left_conflict + right_conflict))
-                        self.log_message(f"  Shifting RIGHT to avoid left-side elements")
-                    
-                    # Calculate vertical shift
-                    vertical_shift = 0
-                    if up_conflict > down_conflict and up_conflict > 0:
-                        vertical_shift = base_shift_factor * (up_conflict / (up_conflict + down_conflict))
-                        self.log_message(f"  Shifting UP to avoid bottom elements")
-                    elif down_conflict > up_conflict and down_conflict > 0:
-                        vertical_shift = -base_shift_factor * (down_conflict / (up_conflict + down_conflict))
-                        self.log_message(f"  Shifting DOWN to avoid top elements")
-                    
-                    # Smart zoom out based on conflict severity
-                    zoom_out_factor = 1.0 + (len(conflicting_elements) * 0.12)  # 12% per conflict
-                    zoom_out_factor = min(zoom_out_factor, 1.6)  # Cap at 60% zoom out
-                    
-                    # Apply adjustments
-                    current_width = buffered_extent.width
-                    current_height = buffered_extent.height
-                    current_center_x = (buffered_extent.XMin + buffered_extent.XMax) / 2
-                    current_center_y = (buffered_extent.YMin + buffered_extent.YMax) / 2
-                    
-                    new_width = current_width * zoom_out_factor
-                    new_height = current_height * zoom_out_factor
-                    
-                    shift_x = current_width * horizontal_shift
-                    shift_y = current_height * vertical_shift
-                    
-                    new_center_x = current_center_x + shift_x
-                    new_center_y = current_center_y + shift_y
-                    
-                    adjusted_extent = arcpy.Extent(
-                        new_center_x - new_width / 2,
-                        new_center_y - new_height / 2,
-                        new_center_x + new_width / 2,
-                        new_center_y + new_height / 2
-                    )
-                    
-                    self.log_message(f"  Applied adjustments - H: {horizontal_shift:.3f}, V: {vertical_shift:.3f}")
-                    self.log_message(f"  Zoom factor: {zoom_out_factor:.2f}, Final shifts: X={shift_x:.0f}, Y={shift_y:.0f}")
-                    
-                    buffered_extent = adjusted_extent
-                    
-                else:
-                    self.log_message("  No actual overlaps detected - content is clear of all layout elements")
-                
+        
+                # Calculate the optimal position away from all critical elements
+                map_center_x = map_x + map_width / 2
+                map_center_y = map_y + map_height / 2
+        
+                # Analyze map quadrants manually based on critical element positions
+                quad_weights = {'top_left': 0, 'top_right': 0, 'bottom_left': 0, 'bottom_right': 0}
+        
+                # Add weighting to quadrants based on where critical elements are located
+                if legend_pos:
+                    lx, ly = legend_pos
+                    if lx < map_center_x and ly > map_center_y:
+                        quad_weights['top_left'] += 10  # Top-left quadrant
+                    elif lx > map_center_x and ly > map_center_y:
+                        quad_weights['top_right'] += 10  # Top-right quadrant
+                    elif lx < map_center_x and ly < map_center_y:
+                        quad_weights['bottom_left'] += 10  # Bottom-left quadrant
+                    elif lx > map_center_x and ly < map_center_y:
+                        quad_weights['bottom_right'] += 10  # Bottom-right quadrant
+
+                if inset_pos:
+                    ix, iy = inset_pos
+                    if ix < map_center_x and iy > map_center_y:
+                        quad_weights['top_left'] += 8  # Top-left quadrant
+                    elif ix > map_center_x and iy > map_center_y:
+                        quad_weights['top_right'] += 8  # Top-right quadrant
+                    elif ix < map_center_x and iy < map_center_y:
+                        quad_weights['bottom_left'] += 8  # Bottom-left quadrant
+                    elif ix > map_center_x and iy < map_center_y:
+                        quad_weights['bottom_right'] += 8  # Bottom-right quadrant
+
+                if rectangle_pos:
+                    rx, ry = rectangle_pos
+                    if rx < map_center_x and ry > map_center_y:
+                        quad_weights['top_left'] += 5  # Top-left quadrant
+                    elif rx > map_center_x and ry > map_center_y:
+                        quad_weights['top_right'] += 5  # Top-right quadrant
+                    elif rx < map_center_x and ry < map_center_y:
+                        quad_weights['bottom_left'] += 5  # Bottom-left quadrant
+                    elif rx > map_center_x and ry < map_center_y:
+                        quad_weights['bottom_right'] += 5  # Bottom-right quadrant
+        
+                # Log the calculated weights
+                self.log_message(f"  Critical element avoid weights: {quad_weights}")
+        
+                # Find the quadrant with minimum conflict weight
+                min_quad = min(quad_weights.items(), key=lambda x: x[1])[0]
+                self.log_message(f"  Best placement quadrant: {min_quad}")
+        
+                # IMPROVED: Apply a more conservative shift to avoid over-correction
+                shift_multiplier = 0.4  # More conservative than 0.8
+                horizontal_shift = 0
+                vertical_shift = 0
+        
+                # CRITICAL FIX: CORRECT SHIFT DIRECTIONS FOR ALL QUADRANTS
+                if min_quad == "top_left":
+                    horizontal_shift = shift_multiplier  # Move RIGHT to shift content LEFT
+                    vertical_shift = -shift_multiplier   # CORRECT: Move UP to shift content DOWN
+                    self.log_message(f"  SMART SHIFT: Moving map UP and RIGHT to position content in {min_quad}")
+                elif min_quad == "top_right":
+                    horizontal_shift = -shift_multiplier  # Move LEFT to shift content RIGHT
+                    vertical_shift = -shift_multiplier    # CORRECT: Move UP to shift content DOWN  
+                    self.log_message(f"  SMART SHIFT: Moving map UP and LEFT to position content in {min_quad}")
+                elif min_quad == "bottom_left":
+                    horizontal_shift = shift_multiplier   # Move RIGHT to shift content LEFT
+                    vertical_shift = shift_multiplier     # CORRECT: Move DOWN to shift content UP
+                    self.log_message(f"  SMART SHIFT: Moving map DOWN and RIGHT to position content in {min_quad}")
+                elif min_quad == "bottom_right":
+                    horizontal_shift = -shift_multiplier  # Move LEFT to shift content RIGHT
+                    vertical_shift = shift_multiplier     # CORRECT: Move DOWN to shift content UP
+                    self.log_message(f"  SMART SHIFT: Moving map DOWN and LEFT to position content in {min_quad}")
+        
+                # Apply the shifts with guaranteed non-zero effect
+                current_width = max(buffered_extent.width, 0.1)  # Ensure non-zero width
+                current_height = max(buffered_extent.height, 0.1)  # Ensure non-zero height
+        
+                current_center_x = (buffered_extent.XMin + buffered_extent.XMax) / 2
+                current_center_y = (buffered_extent.YMin + buffered_extent.YMax) / 2
+        
+                # Calculate more conservative shifts
+                max_dimension = max(current_width, current_height)
+                shift_x = max_dimension * horizontal_shift * 0.08  # Much more conservative
+                shift_y = max_dimension * vertical_shift * 0.08    # Much more conservative
+        
+                new_center_x = current_center_x + shift_x
+                new_center_y = current_center_y + shift_y
+        
+                self.log_message(f"  Shifting extent center from ({current_center_x:.4f}, {current_center_y:.4f}) to ({new_center_x:.4f}, {new_center_y:.4f})")
+                self.log_message(f"  Absolute shift: X={shift_x:.4f}, Y={shift_y:.4f} map units")
+        
+                # Create the shifted extent
+                current_width = buffered_extent.XMax - buffered_extent.XMin
+                current_height = buffered_extent.YMax - buffered_extent.YMin
+        
+                buffered_extent = arcpy.Extent(
+                    new_center_x - current_width / 2,
+                    new_center_y - current_height / 2,
+                    new_center_x + current_width / 2,
+                    new_center_y + current_height / 2
+                )
+        
+                self.log_message(f"  Final adjusted extent: {buffered_extent.XMin:.3f}, {buffered_extent.YMin:.3f}, {buffered_extent.XMax:.3f}, {buffered_extent.YMax:.3f}")
+
             except Exception as e:
-                self.log_message(f"  Error during smart element avoidance: {str(e)}")
-                import traceback
-                self.log_message(f"  Traceback: {traceback.format_exc()}")
+                self.log_message(f"  Error during element analysis: {str(e)}")
         
         # Set the final extent
         try:
             map_frame.camera.setExtent(buffered_extent)
-            self.log_message(f"  Successfully set extent for {dive_id} using {len(visible_layers)} layers")
+            
+            # Automatically adjust scale bar units based on new scale
+            self.adjust_scale_bar_units(layout, map_frame, dive_id)
+            
+            self.log_message(f"  Successfully set optimized extent for {dive_id} using {len(visible_layers)} layers")
         except Exception as e:
             self.log_message(f"  Error setting extent: {str(e)}")
             # Try fallback method
             try:
-                self.log_message("  Attempting fallback zoom to extent (no avoidance)")
-                map_frame.camera = buffered_extent
+                self.log_message("  Attempting fallback zoom to extent")
+                map_frame.camera = buffered_extent;
+                
+                # Also try scale bar adjustment in fallback
+                self.adjust_scale_bar_units(layout, map_frame, dive_id)
+                
                 self.log_message("  Fallback zoom successful")
             except Exception as alt_e:
                 self.log_message(f"  Fallback zoom also failed: {str(alt_e)}")
+    
+    def manual_refresh_project(self):
+        """Manual project refresh for when things get stuck"""
+        self.log_message("Manual project refresh requested...")
+        
+        if self.refresh_project_connection():
+            # Repopulate the interface
+            self.populate_layout_dropdown()
+            self.populate_layer_groups()
+            self.log_message("Project refreshed successfully")
+            messagebox.showinfo("Success", "Project connection refreshed")
+        else:
+            messagebox.showerror("Error", "Failed to refresh project connection")
 
-    def on_layer_group_selection_changed(self):
-        """Handle changes in layer group selection"""
-        # This method can be used for any future functionality when layer group selection changes
-        # For now, it's just a placeholder to prevent the trace callback error
-        pass
+    def process_single_dive_enhanced(self, dive_id, all_dive_layers, layout_name, output_folder, dpi):
+        """Process a single dive with enhanced error handling"""
+        try:
+            # Prepare layer visibility changes
+            layers_to_hide = []
+            layers_to_show = []
+            active_map_obj = None
+            
+            for layer_info in all_dive_layers:
+                layer = layer_info['layer']
+                if self.dive_pattern.search(layer.name):
+                    if dive_id.upper() in layer.name.upper():
+                        layers_to_show.append((layer, True))
+                        active_map_obj = layer_info['map_obj']
+                    else:
+                        layers_to_hide.append((layer, False))
+            
+            # Apply visibility changes in batches
+            if layers_to_hide:
+                self.batch_set_layer_visibility(layers_to_hide, dive_id)
+            
+            if layers_to_show:
+                self.batch_set_layer_visibility(layers_to_show, dive_id)
+            
+            if not layers_to_show:
+                self.log_message(f"  No layers found for {dive_id}")
+                return False
+            
+            # Access layout with retry logic
+            layout = self.safe_get_layout(layout_name)
+            
+            if not layout:
+                self.log_message(f"  Could not access layout for {dive_id}")
+                return False
+            
+            # Zoom to extent
+            if active_map_obj:
+                try:
+                    self.zoom_to_active_layers(layout, active_map_obj, dive_id)
+                except Exception as e:
+                    self.log_message(f"  Error zooming: {str(e)}")
+            
+            # Export with retry
+            output_file = os.path.join(output_folder, f"{dive_id}.jpg")
+            return self.safe_export_layout(layout, output_file, dpi, dive_id)
+            
+        except Exception as e:
+            self.log_message(f"  Error in single dive processing: {str(e)}")
+            return False
+
+    def safe_get_layout(self, layout_name, max_retries=3):
+        """Safely get layout with retry logic"""
+        def get_layout():
+            layouts = list(self.project.listLayouts(layout_name))
+            if layouts:
+                return layouts[0]
+            return None
+        
+        return self.safe_layer_operation(get_layout, max_retries=max_retries)
+
+    def safe_export_layout(self, layout, output_file, dpi, dive_id, max_retries=2):
+        """Safely export layout with retry logic"""
+        def export_layout():
+            layout.exportToJPEG(output_file, resolution=dpi)
+            return True
+        
+        try:
+            result = self.safe_layer_operation(export_layout, max_retries=max_retries)
+            if result:
+                self.log_message(f"  Successfully exported {dive_id}")
+            return result
+        except Exception as e:
+            self.log_message(f"  Export failed for {dive_id}: {str(e)}")
+            return False
 
     def _calculate_intersection_area(self, x1_min, y1_min, x1_max, y1_max, x2_min, y2_min, x2_max, y2_max):
         """Calculate the intersection area between two rectangles"""
@@ -1173,8 +1381,118 @@ class LayoutAutomatorApp:
         height = intersection_y_max - intersection_y_min
         return width * height
 
-# Run the application
-if __name__ == "__main__":
+    # Enhanced scale bar approach with additional settings
+    def adjust_scale_bar_units(self, layout, map_frame, dive_id):
+        """Update ONLY the scale bar unit labels - let ArcGIS handle the scale"""
+        try:
+            # Get the current map scale
+            current_scale = map_frame.camera.scale
+            self.log_message(f"  Current map scale: 1:{current_scale:,.0f}")
+            
+            # Determine appropriate units based on scale
+            scale_threshold = 90000
+            use_kilometers = current_scale > scale_threshold
+            target_label = "Kilometers" if use_kilometers else "Meters"
+            
+            self.log_message(f"  Scale threshold check: {current_scale:,.0f} {'>' if use_kilometers else '<='} {scale_threshold:,}")
+            self.log_message(f"  Target scale bar label: {target_label}")
+            
+            # Find scale bar elements
+            scale_bars = []
+            for element in layout.listElements("MAPSURROUND_ELEMENT"):
+                if hasattr(element, 'name') and ("scale" in element.name.lower() or "bar" in element.name.lower()):
+                    scale_bars.append(element)
+                    self.log_message(f"    Found scale bar: {element.name}")
+            
+            if not scale_bars:
+                self.log_message("    No scale bar elements found")
+                return False
+            
+            success_count = 0
+            
+            # CIM APPROACH: Only change the unit label
+            try:
+                layout_cim = layout.getDefinition("V3")
+                
+                # Use the appropriate UWKID for units
+                import json
+                unit_wkid = 9093 if use_kilometers else 9036  # 9036=Meters, 9093=Kilometers
+                scalebar_unit = json.loads(f'{{"uwkid":{unit_wkid}}}')
+                
+                for scale_bar in scale_bars:
+                    scale_bar_name = scale_bar.name
+                    for elm in layout_cim.elements:
+                        if hasattr(elm, 'name') and elm.name == scale_bar_name:
+                            try:
+                                # ONLY change the unit label and units - let ArcGIS handle the scale
+                                elm.unitLabel = target_label
+                                elm.units = scalebar_unit
+                                
+                                # DON'T change divisions, number format, or other scale properties
+                                # Let ArcGIS auto-calculate the appropriate scale
+                                
+                                success_count += 1
+                                self.log_message(f"      Updated scale bar label: {scale_bar_name}")
+                                break
+                            except Exception as e:
+                                self.log_message(f"      Error updating scale bar {scale_bar_name}: {str(e)}")
+        
+                # Apply the CIM changes
+                if success_count > 0:
+                    layout.setDefinition(layout_cim)
+                    self.log_message(f"    Successfully updated {success_count} scale bar labels")
+                    return True
+                    
+            except Exception as e:
+                self.log_message(f"    CIM approach failed: {str(e)}")
+    
+            # Fallback: Only change unit label - THIS NEEDS TO BE INSIDE THE MAIN TRY BLOCK
+            if success_count == 0:
+                self.log_message(f"    Attempting direct label update only")
+                
+                for scale_bar in scale_bars:
+                    try:
+                        if hasattr(scale_bar, 'mapSurround'):
+                            ms = scale_bar.mapSurround
+                            
+                            # ONLY change the unit label - don't touch other properties
+                            if hasattr(ms, 'unitLabel'):
+                                ms.unitLabel = target_label
+                                success_count += 1
+                                self.log_message(f"      Updated {scale_bar.name} label only")
+                    except Exception as e:
+                        self.log_message(f"      Error in direct label update: {str(e)}")
+        
+            # Final success check - ALSO INSIDE THE MAIN TRY BLOCK
+            if success_count > 0:
+                self.log_message(f"    Successfully updated {success_count} scale bar labels")
+                return True
+            else:
+                self.log_message("    Could not update scale bar labels")
+                return False
+                
+        except Exception as e:
+            self.log_message(f"  Error in scale bar label adjustment: {str(e)}")
+            return False
+
+
+def run_app():
+    """Run the main application"""
+    
+    # Check for required libraries
+    try:
+        import tkinter as tk
+        from tkinter import ttk, filedialog, messagebox
+        import arcpy
+    except ImportError as e:
+        print(f"Error: Missing required library - {str(e)}")
+        print("Please ensure ArcGIS Pro Python environment is activated")
+        return
+    
+    # Create and run the main window
     root = tk.Tk()
     app = LayoutAutomatorApp(root)
     root.mainloop()
+
+if __name__ == "__main__":
+    run_app()
