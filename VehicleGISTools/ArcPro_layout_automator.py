@@ -46,6 +46,755 @@ import arcpy
 import threading
 import time
 import traceback
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.patches import Rectangle
+import numpy as np
+
+
+class InteractiveExtentController:
+    """Interactive extent control window with embedded map display and mouse interaction"""
+    
+    def __init__(self, parent_app, layout, dive_list, selected_groups):
+        self.parent_app = parent_app
+        self.layout = layout
+        self.dive_list = dive_list
+        self.selected_groups = selected_groups
+        self.current_dive_index = 0
+        self.user_cancelled = False
+        self.completed_dives = []
+        
+        # Map display variables
+        self.current_extent = None
+        self.original_extent = None
+        self.visible_layers = []
+        self.layout_elements = []
+        
+        # Mouse interaction variables
+        self.mouse_pressed = False
+        self.last_mouse_x = None
+        self.last_mouse_y = None
+        
+        # Create the interactive window
+        self.create_interactive_window()
+        
+    def create_interactive_window(self):
+        """Create the interactive extent control window with embedded map"""
+        self.window = tk.Toplevel(self.parent_app.root)
+        self.window.title("Interactive Extent Control")
+        self.window.geometry("1200x800")
+        self.window.resizable(True, True)
+        
+        # Make it modal
+        self.window.transient(self.parent_app.root)
+        self.window.grab_set()
+        
+        # Create main container
+        main_container = ttk.Frame(self.window)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Left panel for controls
+        left_panel = ttk.Frame(main_container, width=300)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        left_panel.pack_propagate(False)
+        
+        # Right panel for map
+        right_panel = ttk.Frame(main_container)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # === LEFT PANEL CONTROLS ===
+        
+        # Title
+        title_label = ttk.Label(left_panel, text="Interactive Extent Control", 
+                               font=("TkDefaultFont", 14, "bold"))
+        title_label.pack(pady=(0, 10))
+        
+        # Current dive info
+        self.dive_info_frame = ttk.LabelFrame(left_panel, text="Current Dive", padding="10")
+        self.dive_info_frame.pack(fill=tk.X, pady=5)
+        
+        self.current_dive_label = ttk.Label(self.dive_info_frame, text="", 
+                                           font=("TkDefaultFont", 12, "bold"))
+        self.current_dive_label.pack()
+        
+        self.progress_label = ttk.Label(self.dive_info_frame, text="")
+        self.progress_label.pack()
+        
+        # Extent controls
+        extent_control_frame = ttk.LabelFrame(left_panel, text="Extent Controls", padding="10")
+        extent_control_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(extent_control_frame, text="Zoom to Layer Extent", 
+                  command=self.zoom_to_layers).pack(fill=tk.X, pady=2)
+        ttk.Button(extent_control_frame, text="Reset to Original", 
+                  command=self.reset_extent).pack(fill=tk.X, pady=2)
+        
+        # Zoom controls
+        zoom_frame = ttk.Frame(extent_control_frame)
+        zoom_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(zoom_frame, text="Zoom In", command=self.zoom_in, width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(zoom_frame, text="Zoom Out", command=self.zoom_out, width=10).pack(side=tk.LEFT, padx=2)
+        
+        # Pan controls
+        pan_frame = ttk.LabelFrame(left_panel, text="Pan Controls", padding="10")
+        pan_frame.pack(fill=tk.X, pady=5)
+        
+        # Pan buttons in grid
+        pan_grid = ttk.Frame(pan_frame)
+        pan_grid.pack()
+        
+        ttk.Button(pan_grid, text="↑", command=lambda: self.pan_map(0, 0.2), width=3).grid(row=0, column=1, padx=2, pady=2)
+        ttk.Button(pan_grid, text="←", command=lambda: self.pan_map(-0.2, 0), width=3).grid(row=1, column=0, padx=2, pady=2)
+        ttk.Button(pan_grid, text="●", command=self.center_on_features, width=3).grid(row=1, column=1, padx=2, pady=2)
+        ttk.Button(pan_grid, text="→", command=lambda: self.pan_map(0.2, 0), width=3).grid(row=1, column=2, padx=2, pady=2)
+        ttk.Button(pan_grid, text="↓", command=lambda: self.pan_map(0, -0.2), width=3).grid(row=2, column=1, padx=2, pady=2)
+        
+        # Instructions
+        instructions_frame = ttk.LabelFrame(left_panel, text="Mouse Controls", padding="10")
+        instructions_frame.pack(fill=tk.X, pady=5)
+        
+        instructions_text = "• Left-click and drag to pan\n• Mouse wheel to zoom\n• Use buttons for precise control"
+        instructions_label = ttk.Label(instructions_frame, text=instructions_text, justify=tk.LEFT)
+        instructions_label.pack(anchor=tk.W)
+        
+        # Layer info
+        layer_info_frame = ttk.LabelFrame(left_panel, text="Current Layers", padding="10")
+        layer_info_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Create scrollable list for layers
+        self.layer_listbox = tk.Listbox(layer_info_frame, height=6)
+        layer_scrollbar = ttk.Scrollbar(layer_info_frame, orient="vertical", command=self.layer_listbox.yview)
+        self.layer_listbox.configure(yscrollcommand=layer_scrollbar.set)
+        
+        self.layer_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        layer_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Status
+        self.status_label = ttk.Label(left_panel, text="Ready to start...", 
+                                     foreground="blue", wraplength=280)
+        self.status_label.pack(pady=5)
+        
+        # Navigation buttons
+        button_frame = ttk.Frame(left_panel)
+        button_frame.pack(fill=tk.X, pady=10)
+        
+        self.next_button = ttk.Button(button_frame, text="NEXT DIVE", 
+                                     command=self.next_dive)
+        self.next_button.pack(side=tk.RIGHT, padx=5)
+        
+        self.cancel_button = ttk.Button(button_frame, text="CANCEL", 
+                                       command=self.cancel_process)
+        self.cancel_button.pack(side=tk.RIGHT, padx=5)
+        
+        # === RIGHT PANEL MAP ===
+        
+        # Create matplotlib figure with tight layout
+        self.fig, self.ax = plt.subplots(figsize=(10, 8))
+        self.fig.patch.set_facecolor('white')
+        self.fig.tight_layout(pad=1.0)
+        
+        # Create canvas
+        self.canvas = FigureCanvasTkAgg(self.fig, right_panel)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Connect mouse events for interaction
+        self.canvas.mpl_connect('button_press_event', self.on_mouse_press)
+        self.canvas.mpl_connect('button_release_event', self.on_mouse_release)
+        self.canvas.mpl_connect('motion_notify_event', self.on_mouse_move)
+        self.canvas.mpl_connect('scroll_event', self.on_mouse_scroll)
+        
+        # Handle window close
+        self.window.protocol("WM_DELETE_WINDOW", self.cancel_process)
+        
+        # Start the process
+        self.start_interactive_process()
+    
+    def on_mouse_press(self, event):
+        """Handle mouse press events"""
+        if event.inaxes != self.ax:
+            return
+        
+        if event.button == 1:  # Left click
+            self.mouse_pressed = True
+            self.last_mouse_x = event.xdata
+            self.last_mouse_y = event.ydata
+    
+    def on_mouse_release(self, event):
+        """Handle mouse release events"""
+        self.mouse_pressed = False
+        self.last_mouse_x = None
+        self.last_mouse_y = None
+    
+    def on_mouse_move(self, event):
+        """Handle mouse move events for panning"""
+        if not self.mouse_pressed or event.inaxes != self.ax:
+            return
+        
+        if self.last_mouse_x is None or self.last_mouse_y is None:
+            return
+        
+        if self.current_extent:
+            # Calculate the pan distance in data coordinates
+            dx = self.last_mouse_x - event.xdata
+            dy = self.last_mouse_y - event.ydata
+            
+            # Update the extent
+            self.current_extent = arcpy.Extent(
+                self.current_extent.XMin + dx,
+                self.current_extent.YMin + dy,
+                self.current_extent.XMax + dx,
+                self.current_extent.YMax + dy
+            )
+            
+            # Update the display
+            self.plot_layers()
+            self.plot_layout_elements()
+    
+    def on_mouse_scroll(self, event):
+        """Handle mouse scroll events for zooming"""
+        if event.inaxes != self.ax:
+            return
+        
+        if self.current_extent:
+            # Get the mouse position in data coordinates
+            mouse_x = event.xdata
+            mouse_y = event.ydata
+            
+            if mouse_x is None or mouse_y is None:
+                return
+            
+            # Zoom factor
+            zoom_factor = 0.9 if event.step > 0 else 1.1
+            
+            # Calculate new size
+            new_width = self.current_extent.width * zoom_factor
+            new_height = self.current_extent.height * zoom_factor
+            
+            # Zoom towards mouse position
+            x_ratio = (mouse_x - self.current_extent.XMin) / self.current_extent.width
+            y_ratio = (mouse_y - self.current_extent.YMin) / self.current_extent.height
+            
+            new_x_min = mouse_x - (new_width * x_ratio)
+            new_y_min = mouse_y - (new_height * y_ratio)
+            
+            self.current_extent = arcpy.Extent(
+                new_x_min,
+                new_y_min,
+                new_x_min + new_width,
+                new_y_min + new_height
+            )
+            
+            # Update the display
+            self.plot_layers()
+            self.plot_layout_elements()
+    
+    def start_interactive_process(self):
+        """Start the interactive extent control process"""
+        try:
+            self.parent_app.log_message("Starting interactive extent control with embedded map...")
+            
+            # Start with the first dive
+            self.load_current_dive()
+            
+        except Exception as e:
+            self.parent_app.log_message(f"Error starting interactive process: {str(e)}")
+            messagebox.showerror("Error", f"Failed to start interactive process: {str(e)}")
+            self.cancel_process()
+    
+    def load_current_dive(self):
+        """Load the current dive and update the display"""
+        if self.current_dive_index >= len(self.dive_list):
+            self.complete_process()
+            return
+        
+        current_dive = self.dive_list[self.current_dive_index]
+        
+        # Ensure current_dive is an integer for formatting
+        if isinstance(current_dive, str):
+            current_dive = int(current_dive)
+        
+        dive_id = f"DIVE{current_dive:03d}"
+        
+        # Update the GUI
+        self.current_dive_label.config(text=f"Current: {dive_id}")
+        self.progress_label.config(text=f"Dive {self.current_dive_index + 1} of {len(self.dive_list)}")
+        
+        progress_pct = int(((self.current_dive_index + 1) / len(self.dive_list)) * 100)
+        self.status_label.config(text=f"Adjust extent for {dive_id} using the map and controls ({progress_pct}% complete)")
+        
+        self.parent_app.log_message(f"Interactive: Loading {dive_id} ({self.current_dive_index + 1}/{len(self.dive_list)})")
+        
+        try:
+            # Set up the dive layers
+            self.setup_dive_layers(dive_id)
+            
+            # Load and display the map
+            self.load_map_display(dive_id)
+            
+            # Enable the NEXT button
+            self.next_button.config(state=tk.NORMAL)
+            
+        except Exception as e:
+            self.parent_app.log_message(f"Error loading {dive_id}: {str(e)}")
+            messagebox.showerror("Error", f"Error loading {dive_id}: {str(e)}")
+    
+    def setup_dive_layers(self, dive_id):
+        """Set up layer visibility for the current dive"""
+        # Get all dive layers
+        all_dive_layers = self.parent_app.pre_collect_dive_layers(self.selected_groups)
+        
+        # Prepare layer visibility changes
+        layers_to_hide = []
+        layers_to_show = []
+        
+        for layer_info in all_dive_layers:
+            layer = layer_info['layer']
+            if self.parent_app.dive_pattern.search(layer.name):
+                if dive_id.upper() in layer.name.upper():
+                    layers_to_show.append((layer, True))
+                else:
+                    layers_to_hide.append((layer, False))
+        
+        # Apply visibility changes
+        if layers_to_hide:
+            self.parent_app.batch_set_layer_visibility(layers_to_hide, dive_id)
+        
+        if layers_to_show:
+            self.parent_app.batch_set_layer_visibility(layers_to_show, dive_id)
+    
+    def load_map_display(self, dive_id):
+        """Load the map display with current dive layers"""
+        try:
+            # Clear the plot
+            self.ax.clear()
+            
+            # Get visible layers for this dive
+            self.visible_layers = self.parent_app.get_visible_layers_for_dive(self.selected_groups, dive_id)
+            
+            self.parent_app.log_message(f"Found {len(self.visible_layers)} visible layers for {dive_id}")
+            
+            if not self.visible_layers:
+                self.ax.text(0.5, 0.5, f"No visible layers found for {dive_id}", 
+                       ha='center', va='center', transform=self.ax.transAxes, fontsize=12)
+                self.canvas.draw()
+                return
+            
+            # Update layer list
+            self.update_layer_list()
+            
+            # Calculate and set initial extent
+            extent = self.parent_app.calculate_combined_extent(self.visible_layers)
+            
+            if extent:
+                self.parent_app.log_message(f"Calculated extent: {extent.XMin:.6f}, {extent.YMin:.6f}, {extent.XMax:.6f}, {extent.YMax:.6f}")
+                
+                # Apply buffer for initial display
+                base_buffer_pct = self.parent_app.buffer_percentage.get() / 100.0
+                buffer_x = extent.width * base_buffer_pct
+                buffer_y = extent.height * base_buffer_pct
+                
+                # Ensure minimum buffer
+                min_buffer = 0.001
+                buffer_x = max(buffer_x, min_buffer)
+                buffer_y = max(buffer_y, min_buffer)
+                
+                self.original_extent = arcpy.Extent(
+                    extent.XMin - buffer_x,
+                    extent.YMin - buffer_y,
+                    extent.XMax + buffer_x,
+                    extent.YMax + buffer_y
+                )
+                
+                self.current_extent = self.original_extent
+                
+                # Plot the layers
+                self.plot_layers()
+                
+                # Add layout elements
+                self.plot_layout_elements()
+                
+                self.parent_app.log_message(f"Loaded map display for {dive_id} with {len(self.visible_layers)} layers")
+            else:
+                self.ax.text(0.5, 0.5, f"Could not calculate extent for {dive_id}", 
+                            ha='center', va='center', transform=self.ax.transAxes, fontsize=12, color='orange')
+                self.canvas.draw()
+                
+        except Exception as e:
+            self.parent_app.log_message(f"Error loading map display for {dive_id}: {str(e)}")
+            self.ax.text(0.5, 0.5, f"Error loading map for {dive_id}\n{str(e)}", 
+                        ha='center', va='center', transform=self.ax.transAxes, fontsize=10, color='red')
+            self.canvas.draw()
+    
+    def extract_layer_geometries(self, layer):
+        """Extract actual geometries from a layer"""
+        geometries = []
+        try:
+            # Use arcpy to get feature geometries
+            with arcpy.da.SearchCursor(layer, ["SHAPE@"]) as cursor:
+                for row in cursor:
+                    geom = row[0]
+                    if geom:
+                        # Convert geometry to coordinate lists
+                        if geom.type == "polyline":
+                            for part in geom:
+                                coords = [(point.X, point.Y) for point in part if point]
+                                if coords:
+                                    geometries.append(('line', coords))
+                        elif geom.type == "point":
+                            geometries.append(('point', [(geom.centroid.X, geom.centroid.Y)]))
+                        elif geom.type == "polygon":
+                            for part in geom:
+                                coords = [(point.X, point.Y) for point in part if point]
+                                if coords:
+                                    geometries.append(('polygon', coords))
+        except Exception as e:
+            self.parent_app.log_message(f"  Could not extract geometries from {layer.name}: {str(e)}")
+            # Fallback to extent box
+            try:
+                layer_extent = arcpy.Describe(layer).extent
+                coords = [
+                    (layer_extent.XMin, layer_extent.YMin),
+                    (layer_extent.XMax, layer_extent.YMin),
+                    (layer_extent.XMax, layer_extent.YMax),
+                    (layer_extent.XMin, layer_extent.YMax),
+                    (layer_extent.XMin, layer_extent.YMin)
+                ]
+                geometries.append(('polygon', coords))
+            except:
+                pass
+        
+        return geometries
+    
+    def plot_layers(self):
+        """Plot the visible layers on the map with actual geometries"""
+        try:
+            layer_colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink', 'gray']
+            
+            self.parent_app.log_message(f"Plotting {len(self.visible_layers)} layers with geometries...")
+            
+            # Clear the axes but keep the extent
+            self.ax.clear()
+            
+            for i, layer in enumerate(self.visible_layers):
+                try:
+                    color = layer_colors[i % len(layer_colors)]
+                    
+                    # Extract actual geometries
+                    geometries = self.extract_layer_geometries(layer)
+                    
+                    self.parent_app.log_message(f"  Layer {layer.name}: {len(geometries)} geometries")
+                    
+                    # Plot each geometry
+                    for geom_type, coords in geometries:
+                        if geom_type == 'line':
+                            x_coords = [coord[0] for coord in coords]
+                            y_coords = [coord[1] for coord in coords]
+                            self.ax.plot(x_coords, y_coords, color=color, linewidth=2, alpha=0.8, label=layer.name if i == 0 else "")
+                        elif geom_type == 'point':
+                            x_coords = [coord[0] for coord in coords]
+                            y_coords = [coord[1] for coord in coords]
+                            self.ax.scatter(x_coords, y_coords, c=color, s=50, alpha=0.8, label=layer.name if i == 0 else "")
+                        elif geom_type == 'polygon':
+                            x_coords = [coord[0] for coord in coords]
+                            y_coords = [coord[1] for coord in coords]
+                            self.ax.fill(x_coords, y_coords, color=color, alpha=0.3, edgecolor=color, linewidth=2, label=layer.name if i == 0 else "")
+                    
+                except Exception as e:
+                    self.parent_app.log_message(f"Error plotting layer {layer.name}: {str(e)}")
+    
+            # Set the extent
+            if self.current_extent:
+                self.ax.set_xlim(self.current_extent.XMin, self.current_extent.XMax)
+                self.ax.set_ylim(self.current_extent.YMin, self.current_extent.YMax)
+            
+            # Set labels and grid
+            self.ax.set_xlabel('X Coordinate (Longitude)')
+            self.ax.set_ylabel('Y Coordinate (Latitude)')
+            self.ax.grid(True, alpha=0.3)
+            self.ax.set_aspect('equal', adjustable='box')
+            
+            # Add title
+            current_dive = self.dive_list[self.current_dive_index]
+            if isinstance(current_dive, str):
+                current_dive = int(current_dive)
+            dive_title = f"DIVE{current_dive:03d}"
+            
+            self.ax.set_title(f'{dive_title} - Interactive Extent Control', fontsize=14, fontweight='bold')
+            
+            # Force the canvas to update
+            self.canvas.draw()
+            self.canvas.flush_events()
+            
+            self.parent_app.log_message("Map plotting with geometries completed")
+        
+        except Exception as e:
+            self.parent_app.log_message(f"Error plotting layers: {str(e)}")
+            # Show error on the plot
+            self.ax.text(0.5, 0.5, f"Error plotting layers:\n{str(e)}", 
+                        ha='center', va='center', transform=self.ax.transAxes, fontsize=10, color='red')
+            self.canvas.draw()
+    
+    def plot_layout_elements(self):
+        """Plot layout elements as static overlays relative to the plot area"""
+        try:
+            # Get the current plot limits
+            xlim = self.ax.get_xlim()
+            ylim = self.ax.get_ylim()
+            
+            # Calculate layout element positions in axes coordinates (0-1 range)
+            # These positions are fixed relative to the plot frame, not the data
+            
+            # Legend position (typically top-right of the plot area)
+            legend_ax_x = 0.75  # 75% across the plot
+            legend_ax_y = 0.85  # 85% up the plot
+            legend_ax_w = 0.2   # 20% of plot width
+            legend_ax_h = 0.1   # 10% of plot height
+            
+            # Convert to data coordinates for this specific extent
+            plot_width = xlim[1] - xlim[0]
+            plot_height = ylim[1] - ylim[0]
+            
+            legend_x = xlim[0] + (legend_ax_x * plot_width)
+            legend_y = ylim[0] + (legend_ax_y * plot_height)
+            legend_w = legend_ax_w * plot_width
+            legend_h = legend_ax_h * plot_height
+            
+            legend_rect = Rectangle((legend_x, legend_y), legend_w, legend_h,
+                                  linewidth=2, edgecolor='black', facecolor='lightgray',
+                                  alpha=0.7, linestyle='--', zorder=1000)
+            self.ax.add_patch(legend_rect)
+            self.ax.text(legend_x + legend_w/2, legend_y + legend_h/2, 'LEGEND',
+                        ha='center', va='center', fontsize=8, fontweight='bold', zorder=1001)
+            
+            # Scale bar position (typically bottom-left of the plot area)
+            scale_ax_x = 0.05  # 5% across the plot
+            scale_ax_y = 0.05  # 5% up the plot
+            scale_ax_w = 0.15  # 15% of plot width
+            scale_ax_h = 0.05  # 5% of plot height
+            
+            scale_x = xlim[0] + (scale_ax_x * plot_width)
+            scale_y = ylim[0] + (scale_ax_y * plot_height)
+            scale_w = scale_ax_w * plot_width
+            scale_h = scale_ax_h * plot_height
+            
+            scale_rect = Rectangle((scale_x, scale_y), scale_w, scale_h,
+                                 linewidth=2, edgecolor='black', facecolor='lightblue',
+                                 alpha=0.7, linestyle='--', zorder=1000)
+            self.ax.add_patch(scale_rect)
+            self.ax.text(scale_x + scale_w/2, scale_y + scale_h/2, 'SCALE BAR',
+                        ha='center', va='center', fontsize=8, fontweight='bold', zorder=1001)
+            
+            # North arrow (typically top-left)
+            north_ax_x = 0.05
+            north_ax_y = 0.85
+            north_ax_w = 0.08
+            north_ax_h = 0.1
+            
+            north_x = xlim[0] + (north_ax_x * plot_width)
+            north_y = ylim[0] + (north_ax_y * plot_height)
+            north_w = north_ax_w * plot_width
+            north_h = north_ax_h * plot_height
+            
+            north_rect = Rectangle((north_x, north_y), north_w, north_h,
+                                 linewidth=2, edgecolor='black', facecolor='lightyellow',
+                                 alpha=0.7, linestyle='--', zorder=1000)
+            self.ax.add_patch(north_rect)
+            self.ax.text(north_x + north_w/2, north_y + north_h/2, 'N↑',
+                        ha='center', va='center', fontsize=8, fontweight='bold', zorder=1001)
+            
+        except Exception as e:
+            self.parent_app.log_message(f"Error plotting layout elements: {str(e)}")
+    
+    def update_layer_list(self):
+        """Update the layer list display"""
+        self.layer_listbox.delete(0, tk.END)
+        for layer in self.visible_layers:
+            self.layer_listbox.insert(tk.END, layer.name)
+    
+    def zoom_to_layers(self):
+        """Zoom to the extent of all visible layers"""
+        if self.visible_layers:
+            extent = self.parent_app.calculate_combined_extent(self.visible_layers)
+            if extent:
+                # Apply buffer
+                base_buffer_pct = self.parent_app.buffer_percentage.get() / 100.0
+                buffer_x = extent.width * base_buffer_pct
+                buffer_y = extent.height * base_buffer_pct
+                
+                self.current_extent = arcpy.Extent(
+                    extent.XMin - buffer_x,
+                    extent.YMin - buffer_y,
+                    extent.XMax + buffer_x,
+                    extent.YMax + buffer_y
+                )
+                
+                self.plot_layers()
+                self.plot_layout_elements()
+    
+    def reset_extent(self):
+        """Reset to the original extent"""
+        if self.original_extent:
+            self.current_extent = self.original_extent
+            self.plot_layers()
+            self.plot_layout_elements()
+    
+    def zoom_in(self):
+        """Zoom in by 25%"""
+        if self.current_extent:
+            center_x = (self.current_extent.XMin + self.current_extent.XMax) / 2
+            center_y = (self.current_extent.YMin + self.current_extent.YMax) / 2
+            
+            new_width = self.current_extent.width * 0.75
+            new_height = self.current_extent.height * 0.75
+            
+            self.current_extent = arcpy.Extent(
+                center_x - new_width / 2,
+                center_y - new_height / 2,
+                center_x + new_width / 2,
+                center_y + new_height / 2
+            )
+            
+            self.plot_layers()
+            self.plot_layout_elements()
+    
+    def zoom_out(self):
+        """Zoom out by 25%"""
+        if self.current_extent:
+            center_x = (self.current_extent.XMin + self.current_extent.XMax) / 2
+            center_y = (self.current_extent.YMin + self.current_extent.YMax) / 2
+            
+            new_width = self.current_extent.width * 1.25
+            new_height = self.current_extent.height * 1.25
+            
+            self.current_extent = arcpy.Extent(
+                center_x - new_width / 2,
+                center_y - new_height / 2,
+                center_x + new_width / 2,
+                center_y + new_height / 2
+            )
+            
+            self.plot_layers()
+            self.plot_layout_elements()
+    
+    def pan_map(self, x_factor, y_factor):
+        """Pan the map by the specified factors"""
+        if self.current_extent:
+            shift_x = self.current_extent.width * x_factor
+            shift_y = self.current_extent.height * y_factor
+            
+            self.current_extent = arcpy.Extent(
+                self.current_extent.XMin + shift_x,
+                self.current_extent.YMin + shift_y,
+                self.current_extent.XMax + shift_x,
+                self.current_extent.YMax + shift_y
+            )
+            
+            self.plot_layers()
+            self.plot_layout_elements()
+    
+    def center_on_features(self):
+        """Center the view on the feature centroid"""
+        if self.visible_layers:
+            extent = self.parent_app.calculate_combined_extent(self.visible_layers)
+            if extent and self.current_extent:
+                feature_center_x = (extent.XMin + extent.XMax) / 2
+                feature_center_y = (extent.YMin + extent.YMax) / 2
+                
+                current_width = self.current_extent.width
+                current_height = self.current_extent.height
+                
+                self.current_extent = arcpy.Extent(
+                    feature_center_x - current_width / 2,
+                    feature_center_y - current_height / 2,
+                    feature_center_x + current_width / 2,
+                    feature_center_y + current_height / 2
+                )
+                
+                self.plot_layers()
+                self.plot_layout_elements()
+    
+    def next_dive(self):
+        """Process the next dive"""
+        try:
+            current_dive = self.dive_list[self.current_dive_index]
+            
+            # Ensure current_dive is an integer for formatting
+            if isinstance(current_dive, str):
+                current_dive = int(current_dive)
+            
+            dive_id = f"DIVE{current_dive:03d}"
+            
+            # Store the current extent for the layout
+            self.store_current_extent(dive_id)
+            
+            # Mark this dive as completed
+            self.completed_dives.append(current_dive)
+            
+            # Move to next dive
+            self.current_dive_index += 1
+            
+            # Load the next dive or complete
+            self.load_current_dive()
+            
+        except Exception as e:
+            self.parent_app.log_message(f"Error proceeding to next dive: {str(e)}")
+            messagebox.showerror("Error", f"Error proceeding to next dive: {str(e)}")
+
+    def store_current_extent(self, dive_id):
+        """Store the current extent in the actual layout"""
+        try:
+            # Find the map frame in the layout
+            map_frame = None
+            for mf in self.layout.listElements("MAPFRAME_ELEMENT"):
+                map_frame = mf
+                break
+            
+            if map_frame and self.current_extent:
+                # Set the extent in the actual layout
+                map_frame.camera.setExtent(self.current_extent)
+                
+                # Update the scale bar based on the new scale
+                self.parent_app.adjust_scale_bar_units(self.layout, map_frame, dive_id)
+                
+                self.parent_app.log_message(f"Stored user-defined extent for {dive_id}")
+                self.parent_app.log_message(f"  Extent: {self.current_extent.XMin:.6f}, {self.current_extent.YMin:.6f}, {self.current_extent.XMax:.6f}, {self.current_extent.YMax:.6f}")
+            
+        except Exception as e:
+            self.parent_app.log_message(f"Error storing extent for {dive_id}: {str(e)}")
+    
+    def complete_process(self):
+        """Complete the interactive process"""
+        self.parent_app.log_message("Interactive extent control completed!")
+        self.status_label.config(text="All dives completed! Close this window to continue.")
+        
+        # Disable next button
+        self.next_button.config(state=tk.DISABLED)
+        
+        # Update button text
+        self.cancel_button.config(text="CLOSE")
+        
+        # Show completion message
+        messagebox.showinfo("Complete", 
+                           f"Interactive extent control completed for {len(self.completed_dives)} dives.\n\n"
+                           "Close this window to proceed with map generation.")
+    
+    def cancel_process(self):
+        """Cancel the interactive process"""
+        if self.completed_dives:
+            if not messagebox.askyesno("Cancel", 
+                                      f"You have completed {len(self.completed_dives)} dives.\n\n"
+                                      "Do you want to cancel the entire process?"):
+                return
+        
+        self.user_cancelled = True
+        self.parent_app.log_message("Interactive extent control cancelled by user")
+        self.window.destroy()
+    
+    def get_completed_dives(self):
+        """Get the list of completed dives"""
+        return self.completed_dives if not self.user_cancelled else []
+
 
 class LayoutAutomatorApp:
     def __init__(self, root):
@@ -188,30 +937,42 @@ The script will attempt to handle locks automatically."""
         self.layout_dropdown = ttk.Combobox(layout_frame, textvariable=self.layout_name, state="readonly", width=40)
         self.layout_dropdown.grid(row=0, column=1, sticky=tk.W, pady=5)
         
-        # Extent layer group selection with multiple checkboxes - ENHANCED VERSION
+        # Extent control with radio buttons - SIMPLIFIED VERSION
         extent_frame = ttk.LabelFrame(main_frame, text="Extent Control", padding="10")
         extent_frame.pack(fill=tk.X, pady=5)
 
-        # Add a checkbox for fixed extent option
-        self.use_fixed_extent = tk.BooleanVar(value=False)
-        ttk.Checkbutton(extent_frame, text="Use fixed extent (don't zoom to features)", 
-                        variable=self.use_fixed_extent).grid(row=0, column=0, sticky=tk.W, pady=5)
+        # Create a variable to track which extent method is selected
+        self.extent_method = tk.StringVar(value="smart")  # Default to smart extent
 
-        # Add layout element awareness option
-        self.avoid_elements = tk.BooleanVar(value=True)
-        ttk.Checkbutton(extent_frame, text="Smart extent: avoid legends, scale bars and inset maps", 
-                        variable=self.avoid_elements).grid(row=1, column=0, sticky=tk.W, pady=5)
+        # Radio button for fixed extent
+        ttk.Radiobutton(extent_frame, 
+                        text="Simple zoom to layer extent (basic buffering only)", 
+                        variable=self.extent_method, 
+                        value="fixed").grid(row=0, column=0, sticky=tk.W, pady=5)
+
+        # Radio button for smart extent
+        ttk.Radiobutton(extent_frame, 
+                        text="Smart extent with adaptive buffering and element avoidance", 
+                        variable=self.extent_method, 
+                        value="smart").grid(row=1, column=0, sticky=tk.W, pady=5)
+
+        # Radio button for interactive extent
+        ttk.Radiobutton(extent_frame, 
+                        text="Interactive extent control (manual pan/zoom for each dive)", 
+                        variable=self.extent_method, 
+                        value="interactive").grid(row=2, column=0, sticky=tk.W, pady=5)
 
         # Add extent buffer controls
         buffer_frame = ttk.Frame(extent_frame)
-        buffer_frame.grid(row=2, column=0, sticky=tk.W, pady=5)
+        buffer_frame.grid(row=3, column=0, sticky=tk.W, pady=5)
 
         ttk.Label(buffer_frame, text="Extent buffer (%):").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.buffer_percentage = tk.IntVar(value=10)
         ttk.Entry(buffer_frame, textvariable=self.buffer_percentage, width=5).grid(row=0, column=1, sticky=tk.W, pady=5, padx=(5,20))
 
-        ttk.Label(extent_frame, text="Note: Extent will include all visible layers from selected layer groups", 
-                  foreground="blue", font=("TkDefaultFont", 8)).grid(row=3, column=0, sticky=tk.W, pady=(5,0))
+        # Updated note text
+        ttk.Label(extent_frame, text="Note: Smart extent automatically avoids legends, scale bars and inset maps", 
+                  foreground="blue", font=("TkDefaultFont", 8)).grid(row=4, column=0, sticky=tk.W, pady=(5,0))
 
         # Layer group selection
         self.layer_groups_frame = ttk.LabelFrame(main_frame, text="Layer Groups (Select groups containing dive layers)", padding="10")
@@ -572,22 +1333,27 @@ The script will attempt to handle locks automatically."""
                 "Continue?"):
                 return
         
-        # Start processing in a background thread
+        # Start processing
         self.status_var.set("Processing...")
         
         # Set up a watchdog timer to detect if processing hangs
         self.last_progress_time = time.time()
         self.processing_active = True
         
-        # Start the watchdog timer
-        watchdog_thread = threading.Thread(target=self._monitor_progress)
-        watchdog_thread.daemon = True
-        watchdog_thread.start()
-        
-        # Start the actual processing
-        processing_thread = threading.Thread(target=self.process_maps_enhanced, args=(selected_groups,))
-        processing_thread.daemon = True
-        processing_thread.start()
+        # FIX: For interactive mode, don't use threading due to matplotlib GUI issues
+        if self.extent_method.get() == "interactive":
+            # Run interactive mode directly in main thread
+            self.process_maps_enhanced(selected_groups)
+        else:
+            # Start the watchdog timer for non-interactive modes
+            watchdog_thread = threading.Thread(target=self._monitor_progress)
+            watchdog_thread.daemon = True
+            watchdog_thread.start()
+            
+            # Start the actual processing in background thread
+            processing_thread = threading.Thread(target=self.process_maps_enhanced, args=(selected_groups,))
+            processing_thread.daemon = True
+            processing_thread.start()
 
     def _monitor_progress(self):
         """Monitor processing progress and detect hangs"""
@@ -605,12 +1371,9 @@ The script will attempt to handle locks automatically."""
                 self.last_progress_time = current_time
 
     def process_maps_enhanced(self, selected_groups):
-        """Enhanced processing with ArcPro lock handling"""
+        """Enhanced processing with interactive mode support"""
         try:
             self.log_message("Starting enhanced map processing...")
-            
-            if self.running_in_arcpro:
-                self.log_message("Using ArcPro-aware processing mode")
             
             layout_name = self.layout_name.get()
             output_folder = self.output_folder.get()
@@ -621,7 +1384,7 @@ The script will attempt to handle locks automatically."""
                 os.makedirs(output_folder)
                 self.log_message(f"Created output folder: {output_folder}")
             
-            # Find all dive numbers (same as before)
+            # Find all dive numbers
             all_dive_numbers = self.collect_dive_numbers(selected_groups)
             
             if not all_dive_numbers:
@@ -631,49 +1394,111 @@ The script will attempt to handle locks automatically."""
             
             sorted_dives = sorted(all_dive_numbers, key=int)
             total_dives = len(sorted_dives)
-            self.log_message(f"Processing {total_dives} dive maps...")
+            
+            # Handle interactive mode differently
+            if self.extent_method.get() == "interactive":
+                self.log_message(f"Starting interactive extent control for {total_dives} dives...")
+                
+                # Get the layout
+                layout = self.safe_get_layout(layout_name)
+                if not layout:
+                    self.log_message("Could not access layout for interactive mode")
+                    self.status_var.set("Error accessing layout")
+                    return
+                
+                # FIX: Create the interactive controller in the main thread using after_idle
+                def create_interactive_controller():
+                    try:
+                        interactive_controller = InteractiveExtentController(
+                            self, layout, sorted_dives, selected_groups
+                        )
+                        
+                        # Wait for the interactive window to complete
+                        self.root.wait_window(interactive_controller.window)
+                        
+                        # Check if user cancelled
+                        completed_dives = interactive_controller.get_completed_dives()
+                        if not completed_dives:
+                            self.log_message("Interactive extent control was cancelled")
+                            self.status_var.set("Cancelled")
+                            return
+                        
+                        # Convert completed dive numbers to dive IDs for export
+                        dive_ids_to_export = [f"DIVE{dive_num:03d}" if isinstance(dive_num, int) else f"DIVE{int(dive_num):03d}" for dive_num in completed_dives]
+                        
+                        # Continue with export process
+                        self.export_completed_dives(dive_ids_to_export, selected_groups, layout_name, output_folder, dpi)
+                        
+                    except Exception as e:
+                        self.log_message(f"Error in interactive controller: {str(e)}")
+                        self.status_var.set("Error")
+                
+                # Schedule the controller creation in the main thread
+                self.root.after_idle(create_interactive_controller)
+                return
+                
+            else:
+                # Regular processing for fixed and smart modes
+                dive_ids_to_export = [f"DIVE{dive_num:03d}" if isinstance(dive_num, int) else f"DIVE{int(dive_num):03d}" for dive_num in sorted_dives]
+                self.export_completed_dives(dive_ids_to_export, selected_groups, layout_name, output_folder, dpi)
+            
+        except Exception as e:
+            error_message = f"Error processing maps: {str(e)}"
+            self.log_message(error_message)
+            self.status_var.set("Error")
+            messagebox.showerror("Error", error_message)
+            self.processing_active = False
+
+    def export_completed_dives(self, dive_ids_to_export, selected_groups, layout_name, output_folder, dpi):
+        """Export the completed dives"""
+        try:
+            # Now export all the completed dives
+            self.log_message(f"Exporting {len(dive_ids_to_export)} completed dives...")
             
             # Pre-collect all layers to minimize repeated searches
             all_dive_layers = self.pre_collect_dive_layers(selected_groups)
             
-            # Process each dive
-            for i, dive_number in enumerate(sorted_dives, 1):
-                dive_id = f"DIVE{dive_number}"
-                self.log_message(f"\n[{i}/{total_dives}] *** Starting {dive_id} ***")
+            # Process each dive for export
+            for i, dive_id in enumerate(dive_ids_to_export, 1):
+                self.log_message(f"\n[{i}/{len(dive_ids_to_export)}] *** Exporting {dive_id} ***")
                 
-                progress_pct = int((i / total_dives) * 100)
-                self.status_var.set(f"Processing {dive_id} ({i}/{total_dives}) - {progress_pct}% complete")
+                progress_pct = int((i / len(dive_ids_to_export)) * 100)
+                self.status_var.set(f"Exporting {dive_id} ({i}/{len(dive_ids_to_export)}) - {progress_pct}% complete")
                 
                 try:
-                    # Process this dive with enhanced error handling
-                    success = self.process_single_dive_enhanced(dive_id, all_dive_layers, layout_name, output_folder, dpi)
-                    
-                    if success:
-                        self.log_message(f"*** Completed {dive_id} successfully ***")
+                    # For interactive mode, we only need to export (extent is already set)
+                    # For other modes, we need to do the full processing
+                    if self.extent_method.get() == "interactive":
+                        # Just export - extent was set during interactive phase
+                        layout = self.safe_get_layout(layout_name)
+                        if layout:
+                            output_file = os.path.join(output_folder, f"{dive_id}.jpg")
+                            success = self.safe_export_layout(layout, output_file, dpi, dive_id)
+                            if success:
+                                self.log_message(f"*** Exported {dive_id} successfully ***")
+                            else:
+                                self.log_message(f"*** Export failed for {dive_id} ***")
                     else:
-                        self.log_message(f"*** {dive_id} completed with issues ***")
+                        # Regular processing
+                        success = self.process_single_dive_enhanced(dive_id, all_dive_layers, layout_name, output_folder, dpi)
+                        if success:
+                            self.log_message(f"*** Completed {dive_id} successfully ***")
+                        else:
+                            self.log_message(f"*** {dive_id} completed with issues ***")
                         
                 except Exception as e:
                     self.log_message(f"*** Error processing {dive_id}: {str(e)} ***")
-                    
-                    # In ArcPro mode, try to recover from errors
-                    if self.running_in_arcpro:
-                        self.log_message("Attempting error recovery...")
-                        try:
-                            self.refresh_project_connection()
-                        except:
-                            pass
-                
+            
                 # Update GUI
                 self.root.update()
             
             self.processing_active = False
             self.log_message("\nProcessing complete!")
             self.status_var.set("Processing complete")
-            messagebox.showinfo("Success", f"Generated {len(sorted_dives)} maps in {output_folder}")
+            messagebox.showinfo("Success", f"Generated {len(dive_ids_to_export)} maps in {output_folder}")
             
         except Exception as e:
-            error_message = f"Error processing maps: {str(e)}"
+            error_message = f"Error exporting maps: {str(e)}"
             self.log_message(error_message)
             self.status_var.set("Error")
             messagebox.showerror("Error", error_message)
@@ -927,14 +1752,104 @@ The script will attempt to handle locks automatically."""
         return successful, failed
 
     def zoom_to_active_layers(self, layout, active_map_obj, dive_id):
-        """Zoom to the extent of active layers with improved scaling and positioning"""
-        # Check if we should use fixed extent
-        if self.use_fixed_extent.get():
-            self.log_message("  Using fixed extent (not zooming to features)")
-            return
-        
+        """Smart zoom to active layers with adaptive buffering and element avoidance"""
+    
         # Find the map frame in the layout that uses this map
         map_frame = None
+        for mf in layout.listElements("MAPFRAME_ELEMENT"):
+            if mf.map.name == active_map_obj.name:
+                map_frame = mf
+                break
+    
+        if not map_frame:
+            self.log_message(f"  Map frame for {active_map_obj.name} not found in layout")
+            return
+    
+        # Get ALL visible layers from ALL selected layer groups for this dive
+        selected_groups = [key for key, var in self.layer_group_vars.items() if var.get()]
+    
+        if not selected_groups:
+            self.log_message("  No layer groups selected")
+            return
+    
+        self.log_message(f"  SMART EXTENT: Getting extent from all visible layers in {len(selected_groups)} selected groups")
+        visible_layers = self.get_visible_layers_for_dive(selected_groups, dive_id)
+
+        if not visible_layers:
+            self.log_message(f"  No visible layers with valid extents found for {dive_id}")
+            return
+    
+        # Calculate combined extent from ALL visible layers
+        extent = self.calculate_combined_extent(visible_layers)
+    
+        if not extent or extent.width <= 0 or extent.height <= 0:
+            self.log_message(f"  Could not calculate valid extent for {dive_id}")
+            return
+
+        # SMART EXTENT: Apply adaptive buffering and element avoidance
+        self.log_message("  Using smart extent with adaptive buffering and automatic element avoidance")
+    
+        # Adaptive buffering based on feature size
+        base_width = extent.width
+        base_height = extent.height
+    
+        self.log_message(f"  Raw extent size: {base_width:.6f} x {base_height:.6f} units")
+    
+        # Calculate appropriate buffer based on feature dimensions
+        buffer_multiplier, shift_reduction_factor = self.get_adaptive_buffer_params(base_width, base_height)
+    
+        # Apply the adaptive buffer
+        base_buffer_pct = self.buffer_percentage.get() / 100.0
+        adaptive_buffer_pct = base_buffer_pct * buffer_multiplier
+    
+        # Create initial buffered extent
+        buffer_x = extent.width * adaptive_buffer_pct
+        buffer_y = extent.height * adaptive_buffer_pct
+    
+        # Ensure minimum buffer size
+        min_buffer = 0.002
+        buffer_x = max(buffer_x, min_buffer)
+        buffer_y = max(buffer_y, min_buffer)
+    
+        buffered_extent = arcpy.Extent(
+            extent.XMin - buffer_x,
+            extent.YMin - buffer_y,
+            extent.XMax + buffer_x,
+            extent.YMax + buffer_y
+        )
+    
+        self.log_message(f"  Applied adaptive buffer: {buffer_x:.4f} x {buffer_y:.4f} units (multiplier: {buffer_multiplier:.1f})")
+    
+        # ALWAYS apply smart element avoidance for smart extent
+        final_extent = self.apply_smart_element_avoidance(layout, map_frame, buffered_extent, shift_reduction_factor)
+    
+        # Set the final extent
+        try:
+            map_frame.camera.setExtent(final_extent)
+        
+            # Automatically adjust scale bar units based on new scale
+            self.adjust_scale_bar_units(layout, map_frame, dive_id)
+        
+            self.log_message(f"  Successfully set smart adaptive extent for {dive_id} using {len(visible_layers)} layers")
+        
+        except Exception as e:
+            self.log_message(f"  Error setting extent: {str(e)}")
+            # Try fallback method
+            try:
+                self.log_message("  Attempting fallback zoom to extent")
+                map_frame.camera = final_extent
+            
+                # Also try scale bar adjustment in fallback
+                self.adjust_scale_bar_units(layout, map_frame, dive_id)
+            
+                self.log_message("  Fallback zoom successful")
+            except Exception as alt_e:
+                self.log_message(f"  Fallback zoom also failed: {str(alt_e)}")
+
+    def zoom_to_fixed_extent(self, layout, active_map_obj, dive_id):
+        """Simple fixed extent zoom with basic buffering"""
+        # Find the map frame in the layout that uses this map
+        map_frame = None        
         for mf in layout.listElements("MAPFRAME_ELEMENT"):
             if mf.map.name == active_map_obj.name:
                 map_frame = mf
@@ -946,15 +1861,247 @@ The script will attempt to handle locks automatically."""
         
         # Get ALL visible layers from ALL selected layer groups for this dive
         selected_groups = [key for key, var in self.layer_group_vars.items() if var.get()]
-        
+    
         if not selected_groups:
             self.log_message("  No layer groups selected")
             return
+    
+        self.log_message(f"  FIXED EXTENT: Getting extent from all visible layers in {len(selected_groups)} selected groups")
+        visible_layers = self.get_visible_layers_for_dive(selected_groups, dive_id)
+
+        if not visible_layers:
+            self.log_message(f"  No visible layers with valid extents found for {dive_id}")
+            return
+    
+        # Calculate combined extent from ALL visible layers
+        extent = self.calculate_combined_extent(visible_layers)
+    
+        if not extent or extent.width <= 0 or extent.height <= 0:
+            self.log_message(f"  Could not calculate valid extent for {dive_id}")
+            return
         
-        self.log_message(f"  Getting extent from all visible layers in {len(selected_groups)} selected groups")
+        # Apply a basic buffer
+        self.log_message("  Applying basic buffering to extent")
+        base_buffer_pct = self.buffer_percentage.get() / 100.0
+        buffer_x = extent.width * base_buffer_pct
+        buffer_y = extent.height * base_buffer_pct
+        
+        # Ensure minimum buffer size
+        min_buffer = 0.002
+        buffer_x = max(buffer_x, min_buffer)
+        buffer_y = max(buffer_y, min_buffer)
+        
+        buffered_extent = arcpy.Extent(
+            extent.XMin - buffer_x,
+            extent.YMin - buffer_y,
+            extent.XMax + buffer_x,
+            extent.YMax + buffer_y
+        )
+        
+        # Set the extent
+        try:
+            map_frame.camera.setExtent(buffered_extent)
+            
+            # Automatically adjust scale bar units based on new scale
+            self.adjust_scale_bar_units(layout, map_frame, dive_id)
+            
+            self.log_message(f"  Successfully set fixed extent for {dive_id}")
+            
+        except Exception as e:
+            self.log_message(f"  Error setting extent: {str(e)}")
+            # Try fallback method
+            try:
+                self.log_message("  Attempting fallback zoom to extent")
+                map_frame.camera = buffered_extent
+            
+                # Also try scale bar adjustment in fallback
+                self.adjust_scale_bar_units(layout, map_frame, dive_id)
+            
+                self.log_message("  Fallback zoom successful")
+            except Exception as alt_e:
+                self.log_message(f"  Fallback zoom also failed: {str(alt_e)}")
+    
+    def apply_smart_element_avoidance(self, layout, map_frame, extent, shift_reduction_factor):
+        """Apply smart element avoidance to a given extent"""
+        try:
+            # Get all elements in the layout
+            elements = layout.listElements()
+            
+            # Separate out the map frame for this specific map
+            map_frames = [mf for mf in elements if mf.type == "MAPFRAME_ELEMENT" and mf.map.name == map_frame.map.name]
+            other_elements = [el for el in elements if el not in map_frames]
+            
+            # Calculate the initial shift amounts
+            x_shift = extent.width * 0.1  # 10% of width
+            y_shift = extent.height * 0.1  # 10% of height
+            
+            # Reduce shifts if specified
+            if shift_reduction_factor > 0:
+                x_shift /= shift_reduction_factor
+                y_shift /= shift_reduction_factor
+            
+            # Apply shifts to the extent
+            new_x_min = extent.XMin + x_shift
+            new_y_min = extent.YMin + y_shift
+            new_x_max = extent.XMax - x_shift
+            new_y_max = extent.YMax - y_shift
+            
+            avoided_extent = arcpy.Extent(new_x_min, new_y_min, new_x_max, new_y_max)
+            
+            self.log_message(f"  Avoided extent: {avoided_extent}")
+            
+            return avoided_extent
+        
+        except Exception as e:
+            self.log_message(f"  Error applying smart element avoidance: {str(e)}")
+            return extent  # Fallback to original extent
+
+    def get_adaptive_buffer_params(self, width, height):
+        """Determine adaptive buffer parameters based on feature size"""
+        try:
+            # Base buffer multiplier - this can be tuned
+            base_multiplier = 1.5
+            
+            # Reduce the multiplier for very large features to avoid excessive buffering
+            max_dimension = max(width, height)
+            if max_dimension > 1000:
+                reduction_factor = max_dimension / 1000
+                buffer_multiplier = base_multiplier / reduction_factor
+            else:
+                buffer_multiplier = base_multiplier
+            
+            # Shift reduction factor - how much to reduce the shift for element avoidance
+            shift_reduction_factor = 2.0  # Default to 2x reduction
+            
+            return buffer_multiplier, shift_reduction_factor
+        
+        except Exception as e:
+            self.log_message(f"  Error determining adaptive buffer params: {str(e)}")
+            return 1.5, 2.0  # Default values
+
+    def manual_refresh_project(self):
+        """Manually refresh the project - useful if processing gets stuck"""
+        try:
+            self.log_message("Manually refreshing project...")
+            
+            if self.refresh_project_connection():
+                self.populate_layout_dropdown()
+                self.populate_layer_groups()
+                self.log_message("Project refreshed successfully")
+                messagebox.showinfo("Success", "Project refreshed successfully")
+            else:
+                self.log_message("Project refresh failed")
+                messagebox.showwarning("Warning", "Project refresh failed - see log for details")
+                
+        except Exception as e:
+            error_msg = f"Error during manual refresh: {str(e)}"
+            self.log_message(error_msg)
+            messagebox.showerror("Error", error_msg)
+
+    def safe_get_layout(self, layout_name):
+        """Safely get a layout with retry logic"""
+        def get_layout():
+            layouts = list(self.project.listLayouts())
+            for layout in layouts:
+                if layout.name == layout_name:
+                    return layout
+            return None
+        
+        try:
+            return self.safe_layer_operation(get_layout)
+        except Exception as e:
+            self.log_message(f"Error getting layout {layout_name}: {str(e)}")
+            return None
+
+    def safe_export_layout(self, layout, output_file, dpi, dive_id):
+        """Safely export a layout with retry logic"""
+        def export_layout():
+            layout.exportToJPEG(output_file, resolution=dpi, jpeg_quality=95)
+            return True
+        
+        try:
+            self.safe_layer_operation(export_layout)
+            return True
+        except Exception as e:
+            self.log_message(f"Error exporting {dive_id}: {str(e)}")
+            return False
+
+    def adjust_scale_bar_units(self, layout, map_frame, dive_id):
+        """Adjust scale bar units based on map scale"""
+        try:
+            scale_bars = layout.listElements("MAPSURROUND_ELEMENT", "Scale Bar*")
+            
+            if not scale_bars:
+                return
+            
+            current_scale = map_frame.camera.scale
+            
+            for scale_bar in scale_bars:
+                if hasattr(scale_bar, 'units'):
+                    if current_scale > 50000:  # Large scale
+                        scale_bar.units = "Kilometers"
+                    else:  # Small scale
+                        scale_bar.units = "Meters"
+                        
+        except Exception as e:
+            self.log_message(f"  Could not adjust scale bar for {dive_id}: {str(e)}")
+
+    def process_single_dive_enhanced(self, dive_id, all_dive_layers, layout_name, output_folder, dpi):
+        """Process a single dive with enhanced error handling"""
+        try:
+            # Prepare layer visibility changes
+            layers_to_hide = []
+            layers_to_show = []
+            
+            for layer_info in all_dive_layers:
+                layer = layer_info['layer']
+                if dive_id.upper() in layer.name.upper():
+                    layers_to_show.append((layer, True))
+                else:
+                    layers_to_hide.append((layer, False))
+            
+            # Hide other dive layers first
+            if layers_to_hide:
+                self.batch_set_layer_visibility(layers_to_hide, dive_id)
+            
+            # Show target dive layers
+            if layers_to_show:
+                self.batch_set_layer_visibility(layers_to_show, dive_id)
+            
+            # Get the layout
+            layout = self.safe_get_layout(layout_name)
+            if not layout:
+                self.log_message(f"  Layout {layout_name} not found")
+                return False
+            
+            # Find the main map
+            maps = list(self.project.listMaps())
+            if not maps:
+                self.log_message("  No maps found in project")
+                return False
+            
+            active_map_obj = maps[0]  # Use first map
+            
+            # Set the extent based on method
+            if self.extent_method.get() == "smart":
+                self.zoom_to_active_layers(layout, active_map_obj, dive_id)
+            else:  # fixed
+                self.zoom_to_fixed_extent(layout, active_map_obj, dive_id)
+            
+            # Export the layout
+            output_file = os.path.join(output_folder, f"{dive_id}.jpg")
+            success = self.safe_export_layout(layout, output_file, dpi, dive_id)
+            
+            return success
+            
+        except Exception as e:
+            self.log_message(f"  Error processing {dive_id}: {str(e)}")
+            return False
+
+    def get_visible_layers_for_dive(self, selected_groups, dive_id):
+        """Get all visible layers for a specific dive from selected groups"""
         visible_layers = []
         
-        # Collect layers from each selected group
         for group_key in selected_groups:
             map_name, group_name = group_key.split(':', 1)
             
@@ -976,523 +2123,75 @@ The script will attempt to handle locks automatically."""
                     break
             
             if not group_layer:
-                self.log_message(f"Group layer not found: {group_name}")
                 continue
             
-            # Get ALL visible layers for this dive from this group
-            group_layers = []
+            # Get all layers from this group that are currently visible
             for layer in group_layer.listLayers():
-                if hasattr(layer, 'visible') and layer.visible and dive_id.upper() in layer.name.upper():
-                    try:
-                        layer_extent = arcpy.Describe(layer).extent
-                        
-                        if (layer_extent and 
-                            hasattr(layer_extent, 'XMin') and 
-                            hasattr(layer_extent, 'XMax') and
-                            hasattr(layer_extent, 'YMin') and 
-                            hasattr(layer_extent, 'YMax') and
-                            layer_extent.XMax > layer_extent.XMin and 
-                            layer_extent.YMax > layer_extent.YMin):
-                
-                            group_layers.append(layer)
-                            self.log_message(f"    Including {layer.name} from {group_name}")
-                        else:
-                            self.log_message(f"    Skipping {layer.name} (invalid extent dimensions)")
-                        
-                    except Exception as e:
-                        self.log_message(f"    Skipping {layer.name} (extent error): {str(e)}")
-        
-        visible_layers.extend(group_layers)
-        self.log_message(f"    {group_name}: {len(group_layers)} layers with valid extents")
-
-        if not visible_layers:
-            self.log_message(f"  No visible layers with valid extents found for {dive_id}")
-            return
-        
-        # Calculate combined extent from ALL visible layers
-        self.log_message(f"  Calculating combined extent from {len(visible_layers)} layers")
-        extent = None
-        for layer in visible_layers:
-            try:
-                layer_extent = arcpy.Describe(layer).extent
-                
-                if (layer_extent and 
-                    hasattr(layer_extent, 'XMin') and 
-                    layer_extent.XMax > layer_extent.XMin and 
-                    layer_extent.YMax > layer_extent.YMin):
-                    
-                    if extent is None:
-                        extent = layer_extent
-                        self.log_message(f"    Base extent from: {layer.name}")
-                    else:
-                        # Expand the extent to include this layer
-                        new_xmin = min(extent.XMin, layer_extent.XMin)
-                        new_ymin = min(extent.YMin, layer_extent.YMin)
-                        new_xmax = max(extent.XMax, layer_extent.XMax)
-                        new_ymax = max(extent.YMax, layer_extent.YMax)
-                        
-                        extent = arcpy.Extent(new_xmin, new_ymin, new_xmax, new_ymax)
-                
-            except Exception as e:
-                self.log_message(f"  Error getting extent for {layer.name}: {str(e)}")
-        
-        if not extent or extent.width <= 0 or extent.height <= 0:
-            self.log_message(f"  Could not calculate valid extent for {dive_id}")
-            return
-        
-        # Add minimum extent size to prevent tiny extents
-        min_extent_size = 0.01  # Minimum size in map units
-        if extent.width < min_extent_size:
-            center_x = (extent.XMin + extent.XMax) / 2
-            extent = arcpy.Extent(
-                center_x - min_extent_size/2,
-                extent.YMin,
-                center_x + min_extent_size/2,
-                extent.YMax
-            )
-            self.log_message(f"  Adjusted width to minimum size: {min_extent_size}")
-
-        if extent.height < min_extent_size:
-            center_y = (extent.YMin + extent.YMax) / 2
-            extent = arcpy.Extent(
-                extent.XMin,
-                center_y - min_extent_size/2,
-                extent.XMax,
-                center_y + min_extent_size/2
-            )
-            self.log_message(f"  Adjusted height to minimum size: {min_extent_size}")
-        
-        # Get map frame boundaries for element analysis
-        map_x = 0
-        map_y = 0
-        map_width = 100
-        map_height = 100
-        
-        try:
-            map_x = map_frame.elementPositionX
-            map_y = map_frame.elementPositionY
-            map_width = map_frame.elementWidth
-            map_height = map_frame.elementHeight
-            self.log_message(f"  Main map frame: {map_width:.1f} x {map_height:.1f} at ({map_x:.1f}, {map_y:.1f})")
-        except Exception as e:
-            self.log_message(f"  Warning: Could not get map frame dimensions: {str(e)}")
-        
-        # CRITICAL FIX: Apply buffer to create buffered_extent BEFORE element analysis
-        base_buffer_pct = self.buffer_percentage.get() / 100.0
-        
-        # Create initial buffered extent with buffer percentage
-        buffer_x = extent.width * base_buffer_pct
-        buffer_y = extent.height * base_buffer_pct
-        
-        # Create the buffered extent - THIS WAS MISSING BEFORE
-        buffered_extent = arcpy.Extent(
-            extent.XMin - buffer_x,
-            extent.YMin - buffer_y,
-            extent.XMax + buffer_x,
-            extent.YMax + buffer_y
-        )
-        
-        self.log_message(f"  Initial extent: {extent.width:.1f} x {extent.height:.1f} units")
-        self.log_message(f"  Applied {base_buffer_pct*100:.0f}% buffer: {buffer_x:.1f} x {buffer_y:.1f} units")
-        
-        # Apply smart element avoidance if enabled
-        if self.avoid_elements.get():
-            try:
-                self.log_message("  Analyzing layout elements - focusing on Legend, Inset Map, and Rectangle only")
-        
-                # Get ONLY the critical elements we want to avoid
-                legend_elements = list(layout.listElements("LEGEND_ELEMENT"))
-                inset_mapframes = [mf for mf in layout.listElements("MAPFRAME_ELEMENT") if mf != map_frame]
-        
-                # Find the Rectangle element by name or type
-                rectangle_element = []
-                for element in layout.listElements("GRAPHIC_ELEMENT"):
-                    if element.name.lower() == "rectangle" or "rectangle" in element.name.lower():
-                        rectangle_element = [element]
-                        break
-            
-                # ONLY focus on these three critical elements
-                critical_elements = []
-                critical_elements.extend(legend_elements)
-                critical_elements.extend(inset_mapframes)
-                critical_elements.extend(rectangle_element)
-        
-                self.log_message(f"  Found {len(critical_elements)} critical elements to avoid")
-        
-                # Track element positions
-                legend_pos = None
-                inset_pos = None
-                rectangle_pos = None
-        
-                # Analyze elements for positioning
-                for element in critical_elements:
-                    try:
-                        if hasattr(element, 'elementPositionX') and hasattr(element, 'elementPositionY'):
-                            elem_x = element.elementPositionX
-                            elem_y = element.elementPositionY
-                            elem_width = element.elementWidth
-                            elem_height = element.elementHeight
-                            elem_center_x = elem_x + elem_width/2
-                            elem_center_y = elem_y + elem_height/2
-                            elem_type = type(element).__name__
-                    
-                            # Store positions of key elements
-                            if "LegendElement" in elem_type:
-                                legend_pos = (elem_center_x, elem_center_y)
-                                self.log_message(f"    LEGEND at ({elem_center_x:.1f}, {elem_center_y:.1f})")
-                            elif "MapFrame" in elem_type and element != map_frame:
-                                inset_pos = (elem_center_x, elem_center_y)
-                                self.log_message(f"    INSET MAP at ({elem_center_x:.1f}, {elem_center_y:.1f})")
-                            elif "GraphicElement" in elem_type and "rectangle" in element.name.lower():
-                                rectangle_pos = (elem_center_x, elem_center_y)
-                                self.log_message(f"    RECTANGLE at ({elem_center_x:.1f}, {elem_center_y:.1f})")
-                    except Exception as e:
-                        self.log_message(f"  Error analyzing element: {str(e)}")
-        
-                # Calculate the optimal position away from all critical elements
-                map_center_x = map_x + map_width / 2
-                map_center_y = map_y + map_height / 2
-        
-                # Analyze map quadrants manually based on critical element positions
-                quad_weights = {'top_left': 0, 'top_right': 0, 'bottom_left': 0, 'bottom_right': 0}
-        
-                # Add weighting to quadrants based on where critical elements are located
-                if legend_pos:
-                    lx, ly = legend_pos
-                    if lx < map_center_x and ly > map_center_y:
-                        quad_weights['top_left'] += 10  # Top-left quadrant
-                    elif lx > map_center_x and ly > map_center_y:
-                        quad_weights['top_right'] += 10  # Top-right quadrant
-                    elif lx < map_center_x and ly < map_center_y:
-                        quad_weights['bottom_left'] += 10  # Bottom-left quadrant
-                    elif lx > map_center_x and ly < map_center_y:
-                        quad_weights['bottom_right'] += 10  # Bottom-right quadrant
-
-                if inset_pos:
-                    ix, iy = inset_pos
-                    if ix < map_center_x and iy > map_center_y:
-                        quad_weights['top_left'] += 8  # Top-left quadrant
-                    elif ix > map_center_x and iy > map_center_y:
-                        quad_weights['top_right'] += 8  # Top-right quadrant
-                    elif ix < map_center_x and iy < map_center_y:
-                        quad_weights['bottom_left'] += 8  # Bottom-left quadrant
-                    elif ix > map_center_x and iy < map_center_y:
-                        quad_weights['bottom_right'] += 8  # Bottom-right quadrant
-
-                if rectangle_pos:
-                    rx, ry = rectangle_pos
-                    if rx < map_center_x and ry > map_center_y:
-                        quad_weights['top_left'] += 5  # Top-left quadrant
-                    elif rx > map_center_x and ry > map_center_y:
-                        quad_weights['top_right'] += 5  # Top-right quadrant
-                    elif rx < map_center_x and ry < map_center_y:
-                        quad_weights['bottom_left'] += 5  # Bottom-left quadrant
-                    elif rx > map_center_x and ry < map_center_y:
-                        quad_weights['bottom_right'] += 5  # Bottom-right quadrant
-        
-                # Log the calculated weights
-                self.log_message(f"  Critical element avoid weights: {quad_weights}")
-        
-                # Find the quadrant with minimum conflict weight
-                min_quad = min(quad_weights.items(), key=lambda x: x[1])[0]
-                self.log_message(f"  Best placement quadrant: {min_quad}")
-        
-                # IMPROVED: Apply a more conservative shift to avoid over-correction
-                shift_multiplier = 0.4  # More conservative than 0.8
-                horizontal_shift = 0
-                vertical_shift = 0
-        
-                # CRITICAL FIX: CORRECT SHIFT DIRECTIONS FOR ALL QUADRANTS
-                if min_quad == "top_left":
-                    horizontal_shift = shift_multiplier  # Move RIGHT to shift content LEFT
-                    vertical_shift = -shift_multiplier   # CORRECT: Move UP to shift content DOWN
-                    self.log_message(f"  SMART SHIFT: Moving map UP and RIGHT to position content in {min_quad}")
-                elif min_quad == "top_right":
-                    horizontal_shift = -shift_multiplier  # Move LEFT to shift content RIGHT
-                    vertical_shift = -shift_multiplier    # CORRECT: Move UP to shift content DOWN  
-                    self.log_message(f"  SMART SHIFT: Moving map UP and LEFT to position content in {min_quad}")
-                elif min_quad == "bottom_left":
-                    horizontal_shift = shift_multiplier   # Move RIGHT to shift content LEFT
-                    vertical_shift = shift_multiplier     # CORRECT: Move DOWN to shift content UP
-                    self.log_message(f"  SMART SHIFT: Moving map DOWN and RIGHT to position content in {min_quad}")
-                elif min_quad == "bottom_right":
-                    horizontal_shift = -shift_multiplier  # Move LEFT to shift content RIGHT
-                    vertical_shift = shift_multiplier     # CORRECT: Move DOWN to shift content UP
-                    self.log_message(f"  SMART SHIFT: Moving map DOWN and LEFT to position content in {min_quad}")
-        
-                # Apply the shifts with guaranteed non-zero effect
-                current_width = max(buffered_extent.width, 0.1)  # Ensure non-zero width
-                current_height = max(buffered_extent.height, 0.1)  # Ensure non-zero height
-        
-                current_center_x = (buffered_extent.XMin + buffered_extent.XMax) / 2
-                current_center_y = (buffered_extent.YMin + buffered_extent.YMax) / 2
-        
-                # Calculate more conservative shifts
-                max_dimension = max(current_width, current_height)
-                shift_x = max_dimension * horizontal_shift * 0.08  # Much more conservative
-                shift_y = max_dimension * vertical_shift * 0.08    # Much more conservative
-        
-                new_center_x = current_center_x + shift_x
-                new_center_y = current_center_y + shift_y
-        
-                self.log_message(f"  Shifting extent center from ({current_center_x:.4f}, {current_center_y:.4f}) to ({new_center_x:.4f}, {new_center_y:.4f})")
-                self.log_message(f"  Absolute shift: X={shift_x:.4f}, Y={shift_y:.4f} map units")
-        
-                # Create the shifted extent
-                current_width = buffered_extent.XMax - buffered_extent.XMin
-                current_height = buffered_extent.YMax - buffered_extent.YMin
-        
-                buffered_extent = arcpy.Extent(
-                    new_center_x - current_width / 2,
-                    new_center_y - current_height / 2,
-                    new_center_x + current_width / 2,
-                    new_center_y + current_height / 2
-                )
-        
-                self.log_message(f"  Final adjusted extent: {buffered_extent.XMin:.3f}, {buffered_extent.YMin:.3f}, {buffered_extent.XMax:.3f}, {buffered_extent.YMax:.3f}")
-
-            except Exception as e:
-                self.log_message(f"  Error during element analysis: {str(e)}")
-        
-        # Set the final extent
-        try:
-            map_frame.camera.setExtent(buffered_extent)
-            
-            # Automatically adjust scale bar units based on new scale
-            self.adjust_scale_bar_units(layout, map_frame, dive_id)
-            
-            self.log_message(f"  Successfully set optimized extent for {dive_id} using {len(visible_layers)} layers")
-        except Exception as e:
-            self.log_message(f"  Error setting extent: {str(e)}")
-            # Try fallback method
-            try:
-                self.log_message("  Attempting fallback zoom to extent")
-                map_frame.camera = buffered_extent;
-                
-                # Also try scale bar adjustment in fallback
-                self.adjust_scale_bar_units(layout, map_frame, dive_id)
-                
-                self.log_message("  Fallback zoom successful")
-            except Exception as alt_e:
-                self.log_message(f"  Fallback zoom also failed: {str(alt_e)}")
-    
-    def manual_refresh_project(self):
-        """Manual project refresh for when things get stuck"""
-        self.log_message("Manual project refresh requested...")
-        
-        if self.refresh_project_connection():
-            # Repopulate the interface
-            self.populate_layout_dropdown()
-            self.populate_layer_groups()
-            self.log_message("Project refreshed successfully")
-            messagebox.showinfo("Success", "Project connection refreshed")
-        else:
-            messagebox.showerror("Error", "Failed to refresh project connection")
-
-    def process_single_dive_enhanced(self, dive_id, all_dive_layers, layout_name, output_folder, dpi):
-        """Process a single dive with enhanced error handling"""
-        try:
-            # Prepare layer visibility changes
-            layers_to_hide = []
-            layers_to_show = []
-            active_map_obj = None
-            
-            for layer_info in all_dive_layers:
-                layer = layer_info['layer']
-                if self.dive_pattern.search(layer.name):
-                    if dive_id.upper() in layer.name.upper():
-                        layers_to_show.append((layer, True))
-                        active_map_obj = layer_info['map_obj']
-                    else:
-                        layers_to_hide.append((layer, False))
-            
-            # Apply visibility changes in batches
-            if layers_to_hide:
-                self.batch_set_layer_visibility(layers_to_hide, dive_id)
-            
-            if layers_to_show:
-                self.batch_set_layer_visibility(layers_to_show, dive_id)
-            
-            if not layers_to_show:
-                self.log_message(f"  No layers found for {dive_id}")
-                return False
-            
-            # Access layout with retry logic
-            layout = self.safe_get_layout(layout_name)
-            
-            if not layout:
-                self.log_message(f"  Could not access layout for {dive_id}")
-                return False
-            
-            # Zoom to extent
-            if active_map_obj:
                 try:
-                    self.zoom_to_active_layers(layout, active_map_obj, dive_id)
+                    # Check if layer is visible and has valid data
+                    if hasattr(layer, 'visible') and layer.visible:
+                        # For dive-specific layers, check if it matches the current dive
+                        if self.dive_pattern.search(layer.name):
+                            if dive_id.upper() in layer.name.upper():
+                                visible_layers.append(layer)
+                        else:
+                            # Non-dive layers that are visible should be included
+                            visible_layers.append(layer)
                 except Exception as e:
-                    self.log_message(f"  Error zooming: {str(e)}")
-            
-            # Export with retry
-            output_file = os.path.join(output_folder, f"{dive_id}.jpg")
-            return self.safe_export_layout(layout, output_file, dpi, dive_id)
-            
-        except Exception as e:
-            self.log_message(f"  Error in single dive processing: {str(e)}")
-            return False
-
-    def safe_get_layout(self, layout_name, max_retries=3):
-        """Safely get layout with retry logic"""
-        def get_layout():
-            layouts = list(self.project.listLayouts(layout_name))
-            if layouts:
-                return layouts[0]
-            return None
+                    self.log_message(f"  Error checking layer {layer.name}: {str(e)}")
         
-        return self.safe_layer_operation(get_layout, max_retries=max_retries)
+        return visible_layers
 
-    def safe_export_layout(self, layout, output_file, dpi, dive_id, max_retries=2):
-        """Safely export layout with retry logic"""
-        def export_layout():
-            layout.exportToJPEG(output_file, resolution=dpi)
-            return True
-        
+    def calculate_combined_extent(self, layers):
+        """Calculate the combined extent of multiple layers"""
         try:
-            result = self.safe_layer_operation(export_layout, max_retries=max_retries)
-            if result:
-                self.log_message(f"  Successfully exported {dive_id}")
-            return result
-        except Exception as e:
-            self.log_message(f"  Export failed for {dive_id}: {str(e)}")
-            return False
-
-    def _calculate_intersection_area(self, x1_min, y1_min, x1_max, y1_max, x2_min, y2_min, x2_max, y2_max):
-        """Calculate the intersection area between two rectangles"""
-        # Calculate intersection bounds
-        intersection_x_min = max(x1_min, x2_min)
-        intersection_y_min = max(y1_min, y2_min)
-        intersection_x_max = min(x1_max, x2_max)
-        intersection_y_max = min(y1_max, y2_max)
-        
-        # Check if there's actually an intersection
-        if intersection_x_min >= intersection_x_max or intersection_y_min >= intersection_y_max:
-            return 0
-        
-        # Calculate area
-        width = intersection_x_max - intersection_x_min
-        height = intersection_y_max - intersection_y_min
-        return width * height
-
-    # Enhanced scale bar approach with additional settings
-    def adjust_scale_bar_units(self, layout, map_frame, dive_id):
-        """Update ONLY the scale bar unit labels - let ArcGIS handle the scale"""
-        try:
-            # Get the current map scale
-            current_scale = map_frame.camera.scale
-            self.log_message(f"  Current map scale: 1:{current_scale:,.0f}")
+            if not layers:
+                return None
             
-            # Determine appropriate units based on scale
-            scale_threshold = 90000
-            use_kilometers = current_scale > scale_threshold
-            target_label = "Kilometers" if use_kilometers else "Meters"
+            all_extents = []
             
-            self.log_message(f"  Scale threshold check: {current_scale:,.0f} {'>' if use_kilometers else '<='} {scale_threshold:,}")
-            self.log_message(f"  Target scale bar label: {target_label}")
-            
-            # Find scale bar elements
-            scale_bars = []
-            for element in layout.listElements("MAPSURROUND_ELEMENT"):
-                if hasattr(element, 'name') and ("scale" in element.name.lower() or "bar" in element.name.lower()):
-                    scale_bars.append(element)
-                    self.log_message(f"    Found scale bar: {element.name}")
-            
-            if not scale_bars:
-                self.log_message("    No scale bar elements found")
-                return False
-            
-            success_count = 0
-            
-            # CIM APPROACH: Only change the unit label
-            try:
-                layout_cim = layout.getDefinition("V3")
-                
-                # Use the appropriate UWKID for units
-                import json
-                unit_wkid = 9093 if use_kilometers else 9036  # 9036=Meters, 9093=Kilometers
-                scalebar_unit = json.loads(f'{{"uwkid":{unit_wkid}}}')
-                
-                for scale_bar in scale_bars:
-                    scale_bar_name = scale_bar.name
-                    for elm in layout_cim.elements:
-                        if hasattr(elm, 'name') and elm.name == scale_bar_name:
-                            try:
-                                # ONLY change the unit label and units - let ArcGIS handle the scale
-                                elm.unitLabel = target_label
-                                elm.units = scalebar_unit
-                                
-                                # DON'T change divisions, number format, or other scale properties
-                                # Let ArcGIS auto-calculate the appropriate scale
-                                
-                                success_count += 1
-                                self.log_message(f"      Updated scale bar label: {scale_bar_name}")
-                                break
-                            except Exception as e:
-                                self.log_message(f"      Error updating scale bar {scale_bar_name}: {str(e)}")
-        
-                # Apply the CIM changes
-                if success_count > 0:
-                    layout.setDefinition(layout_cim)
-                    self.log_message(f"    Successfully updated {success_count} scale bar labels")
-                    return True
+            for layer in layers:
+                try:
+                    # Get layer extent
+                    desc = arcpy.Describe(layer)
+                    layer_extent = desc.extent;
                     
-            except Exception as e:
-                self.log_message(f"    CIM approach failed: {str(e)}")
-    
-            # Fallback: Only change unit label - THIS NEEDS TO BE INSIDE THE MAIN TRY BLOCK
-            if success_count == 0:
-                self.log_message(f"    Attempting direct label update only")
-                
-                for scale_bar in scale_bars:
-                    try:
-                        if hasattr(scale_bar, 'mapSurround'):
-                            ms = scale_bar.mapSurround
-                            
-                            # ONLY change the unit label - don't touch other properties
-                            if hasattr(ms, 'unitLabel'):
-                                ms.unitLabel = target_label
-                                success_count += 1
-                                self.log_message(f"      Updated {scale_bar.name} label only")
-                    except Exception as e:
-                        self.log_message(f"      Error in direct label update: {str(e)}")
-        
-            # Final success check - ALSO INSIDE THE MAIN TRY BLOCK
-            if success_count > 0:
-                self.log_message(f"    Successfully updated {success_count} scale bar labels")
-                return True
-            else:
-                self.log_message("    Could not update scale bar labels")
-                return False
-                
+                    # Check if extent is valid
+                    if (layer_extent.width > 0 and layer_extent.height > 0 and
+                        layer_extent.XMin != layer_extent.XMax and 
+                        layer_extent.YMin != layer_extent.YMax):
+                        all_extents.append(layer_extent)
+                        
+                except Exception as e:
+                    self.log_message(f"  Could not get extent for layer {layer.name}: {str(e)}")
+            
+            if not all_extents:
+                self.log_message("  No valid extents found")
+                return None
+            
+            # Calculate combined extent
+            min_x = min(ext.XMin for ext in all_extents)
+            min_y = min(ext.YMin for ext in all_extents)
+            max_x = max(ext.XMax for ext in all_extents)
+            max_y = max(ext.YMax for ext in all_extents)
+            
+            combined_extent = arcpy.Extent(min_x, min_y, max_x, max_y)
+            
+            self.log_message(f"  Combined extent from {len(all_extents)} layers: "
+                            f"({min_x:.6f}, {min_y:.6f}) to ({max_x:.6f}, {max_y:.6f})")
+            
+            return combined_extent
+            
         except Exception as e:
-            self.log_message(f"  Error in scale bar label adjustment: {str(e)}")
-            return False
-
-
-def run_app():
-    """Run the main application"""
-    
-    # Check for required libraries
-    try:
-        import tkinter as tk
-        from tkinter import ttk, filedialog, messagebox
-        import arcpy
-    except ImportError as e:
-        print(f"Error: Missing required library - {str(e)}")
-        print("Please ensure ArcGIS Pro Python environment is activated")
-        return
-    
-    # Create and run the main window
-    root = tk.Tk()
-    app = LayoutAutomatorApp(root)
-    root.mainloop()
-
+            self.log_message(f"Error calculating combined extent: {str(e)}")
+            return None
+# Main execution - THIS IS THE CRITICAL PART THAT KEEPS GETTING REMOVED:
 if __name__ == "__main__":
-    run_app()
+    try:
+        root = tk.Tk()
+        app = LayoutAutomatorApp(root)
+        root.mainloop()
+    except Exception as e:
+        print(f"Error starting application: {str(e)}")
+        import traceback
+        traceback.print_exc()
