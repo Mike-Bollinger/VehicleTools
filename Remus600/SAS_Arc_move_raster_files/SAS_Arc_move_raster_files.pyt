@@ -18,7 +18,12 @@ class MoveRasterFiles(object):
     def __init__(self):
         """Define the tool (tool name is the name of the class)."""
         self.label = "SAS Move Raster Files"
-        self.description = "Move selected raster files to a new directory"
+        self.description = """Copy or move raster files to a new directory. 
+        
+        IMPORTANT: Move operations will fail if the raster files are currently loaded as layers in ArcGIS Pro. 
+        To move files, first remove them from the Table of Contents, then run the tool.
+        
+        Copy operations work regardless of whether files are loaded in the map."""
         self.canRunInBackground = False
 
     def getParameterInfo(self):
@@ -93,6 +98,10 @@ class MoveRasterFiles(object):
         arcpy.AddMessage(f"Output directory: {output_directory}")
         arcpy.AddMessage(f"Overwrite existing files: {overwrite}")
         
+        # Add warning for move operations
+        if operation == "Move":
+            arcpy.AddWarning("NOTE: Move operations will fail if files are currently loaded in ArcGIS Pro. Remove layers from the map first if you encounter errors.")
+        
         # Ensure output directory exists
         os.makedirs(output_directory, exist_ok=True)
         
@@ -133,8 +142,16 @@ class MoveRasterFiles(object):
                     shutil.copy2(source_path, destination_path)
                     arcpy.AddMessage(f"Copied: {filename}")
                 elif operation == "Move":
-                    shutil.move(source_path, destination_path)
-                    arcpy.AddMessage(f"Moved: {filename}")
+                    try:
+                        shutil.move(source_path, destination_path)
+                        arcpy.AddMessage(f"Moved: {filename}")
+                    except PermissionError as e:
+                        if "WinError 32" in str(e) or "being used by another process" in str(e):
+                            arcpy.AddWarning(f"Cannot move {filename}: File is currently open in ArcGIS Pro. Remove the layer from the map before moving.")
+                            skipped_files += 1
+                            continue
+                        else:
+                            raise e
                 
                 processed_files += 1
                 
