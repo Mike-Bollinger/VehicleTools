@@ -1,0 +1,1132 @@
+{
+ "mission": {
+  "name": "CFS-CB-R3-Zamboni",
+  "comment": "24.08.2024 15:03:27",
+  "devices": [
+   {
+    "serialNumber": "SUSDA14_2404003",
+    "name": "SCM",
+    "type": "DEVICE_SURFACE",
+    "mapTracesColor": "#ff000000",
+    "mapTextColor": "#ff000000",
+    "home": {},
+    "maxDepth": 300,
+    "payloadKeys": [
+     0
+    ]
+   },
+   {
+    "serialNumber": "NEMOSENS_2309001",
+    "name": "Gill",
+    "type": "DEVICE_DRONE",
+    "mapTracesColor": "#ff000000",
+    "mapTextColor": "#ff000000",
+    "paths": [
+     {
+      "name": "Path6",
+      "stages": [
+       {
+        "name": "WP4",
+        "latitude": 25.206560518810562,
+        "longitude": -80.22113721633292,
+        "navigation": {
+         "velocity": 1,
+         "depth": 1,
+         "duck": {
+          "timeout": 60
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "RailFamily2",
+      "type": "PATH_RAIL",
+      "stages": [
+       {
+        "name": "J1 A",
+        "latitude": 25.208324915538874,
+        "longitude": -80.219580661189127,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J1 B",
+        "latitude": 25.206729225711261,
+        "longitude": -80.221047416755937,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J2 A",
+        "latitude": 25.206665218787219,
+        "longitude": -80.220951355016453,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J2 B",
+        "latitude": 25.208260908628635,
+        "longitude": -80.219484598197255,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J3 A_3m",
+        "latitude": 25.208196901656173,
+        "longitude": -80.219388535305868,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J3 B",
+        "latitude": 25.206601211800965,
+        "longitude": -80.220855293377454,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J4 A",
+        "latitude": 25.20653720475174,
+        "longitude": -80.2207592318389,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J4 B",
+        "latitude": 25.208132894620764,
+        "longitude": -80.219292472514951,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J5 A_4m",
+        "latitude": 25.2080688875224,
+        "longitude": -80.2191964098245,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J5 B",
+        "latitude": 25.206473197639589,
+        "longitude": -80.22066317040084,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J6 A",
+        "latitude": 25.206409190464463,
+        "longitude": -80.220567109063239,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J6 B",
+        "latitude": 25.208004880361067,
+        "longitude": -80.21910034723453,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J7 A",
+        "latitude": 25.207940873136781,
+        "longitude": -80.219004284745054,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J7 B",
+        "latitude": 25.206345183226386,
+        "longitude": -80.220471047826109,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J8 A",
+        "latitude": 25.206281175925358,
+        "longitude": -80.220374986689436,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J8 B",
+        "latitude": 25.207876865849546,
+        "longitude": -80.218908222356035,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "RailFamily3",
+      "type": "PATH_RAIL",
+      "stages": [
+       {
+        "name": "J1 A",
+        "latitude": 25.208289243617031,
+        "longitude": -80.219529054448245,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J1 B",
+        "latitude": 25.206698638186445,
+        "longitude": -80.22100246434897,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J2 A",
+        "latitude": 25.206634596268074,
+        "longitude": -80.220906431399442,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J2 B",
+        "latitude": 25.208225201712434,
+        "longitude": -80.219433020250747,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J3 A_3m",
+        "latitude": 25.208161159745654,
+        "longitude": -80.219336986153735,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J3 B",
+        "latitude": 25.206570554287527,
+        "longitude": -80.220810398550412,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J4 A",
+        "latitude": 25.206506512244079,
+        "longitude": -80.2207143658019,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J4 B",
+        "latitude": 25.208097117715973,
+        "longitude": -80.219240952157236,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J5 A_4m",
+        "latitude": 25.208033075623344,
+        "longitude": -80.219144918261236,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J5 B",
+        "latitude": 25.206442470137713,
+        "longitude": -80.220618333153851,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J6 A",
+        "latitude": 25.206378427968392,
+        "longitude": -80.2205223006063,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J6 B",
+        "latitude": 25.207969033467815,
+        "longitude": -80.219048884465721,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J7 A",
+        "latitude": 25.207904991249336,
+        "longitude": -80.2189528507707,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J7 B",
+        "latitude": 25.2063143857362,
+        "longitude": -80.22042626815923,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J8 A",
+        "latitude": 25.206250343441056,
+        "longitude": -80.220330235812654,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J8 B",
+        "latitude": 25.207840948967959,
+        "longitude": -80.2188568171762,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "RailFamily4",
+      "type": "PATH_RAIL",
+      "stages": [
+       {
+        "name": "J1 A",
+        "latitude": 25.208301408163887,
+        "longitude": -80.219551533905,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J1 B",
+        "latitude": 25.206712995542965,
+        "longitude": -80.221021964125455,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J2 A",
+        "latitude": 25.206649123752563,
+        "longitude": -80.220925794368583,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J2 B",
+        "latitude": 25.208237536387212,
+        "longitude": -80.219455362900078,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J3 A_3m",
+        "latitude": 25.208173664548148,
+        "longitude": -80.219359191995522,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J3 B",
+        "latitude": 25.20658525189981,
+        "longitude": -80.220829624712067,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J4 A",
+        "latitude": 25.206521379983954,
+        "longitude": -80.220733455155923,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J4 B",
+        "latitude": 25.208109792646031,
+        "longitude": -80.219263021191352,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J5 A_4m",
+        "latitude": 25.208045920680789,
+        "longitude": -80.219166850487554,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J5 B",
+        "latitude": 25.20645750800502,
+        "longitude": -80.220637285700136,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J6 A",
+        "latitude": 25.206393635962986,
+        "longitude": -80.22054111634472,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J6 B",
+        "latitude": 25.207982048652468,
+        "longitude": -80.219070679884126,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J7 A",
+        "latitude": 25.207918176561048,
+        "longitude": -80.218974509381084,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J7 B",
+        "latitude": 25.206329763857877,
+        "longitude": -80.220444947089675,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J8 A",
+        "latitude": 25.206265891689661,
+        "longitude": -80.220348777935,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J8 B",
+        "latitude": 25.207854304406524,
+        "longitude": -80.2188783389784,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "RailFamily5",
+      "type": "PATH_RAIL",
+      "stages": [
+       {
+        "name": "J1 A",
+        "latitude": 25.208270522530576,
+        "longitude": -80.219508183318922,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J1 B",
+        "latitude": 25.206683856949741,
+        "longitude": -80.22097879369305,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J2 A",
+        "latitude": 25.206620343644644,
+        "longitude": -80.2208828267343,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J2 B",
+        "latitude": 25.208206870070857,
+        "longitude": -80.219411836871444,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 2,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J3 A_3m",
+        "latitude": 25.208143217548571,
+        "longitude": -80.2193154905242,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J3 B",
+        "latitude": 25.20655669110872,
+        "longitude": -80.220786481635855,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J4 A",
+        "latitude": 25.206493038509461,
+        "longitude": -80.220690136637614,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J4 B",
+        "latitude": 25.208079564962951,
+        "longitude": -80.219219144277147,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 3,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J5 A_4m",
+        "latitude": 25.208015912314025,
+        "longitude": -80.219122798130314,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J5 B",
+        "latitude": 25.206429385846874,
+        "longitude": -80.220593791739589,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J6 A",
+        "latitude": 25.206365733120979,
+        "longitude": -80.220497446941764,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J6 B",
+        "latitude": 25.207952259601743,
+        "longitude": -80.2190264520837,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J7 A",
+        "latitude": 25.207888606826184,
+        "longitude": -80.218930106137279,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J7 B",
+        "latitude": 25.206302080331781,
+        "longitude": -80.220401102244125,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J8 A",
+        "latitude": 25.206238427479249,
+        "longitude": -80.220304757646716,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railBegin": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       },
+       {
+        "name": "J8 B",
+        "latitude": 25.207824953987291,
+        "longitude": -80.218833760291062,
+        "navigation": {
+         "velocity": 1.54333687,
+         "depth": 4,
+         "railEnd": {
+          "timeout": 400,
+          "radius": 10
+         }
+        }
+       }
+      ]
+     },
+     {
+      "name": "Path5",
+      "stages": [
+       {
+        "name": "WP3",
+        "latitude": 25.206898307363264,
+        "longitude": -80.22184181573769,
+        "navigation": {
+         "velocity": 1,
+         "depth": 0,
+         "surface": {
+          "timeout": 60
+         }
+        }
+       }
+      ]
+     }
+    ],
+    "home": {},
+    "maxDepth": 300,
+    "payloadKeys": [
+     1,
+     4
+    ]
+   },
+   {
+    "serialNumber": "SBSDA14_2403001",
+    "name": "Posit1",
+    "type": "DEVICE_SURFACE_REPOSITIONING_BUOY",
+    "mapTracesColor": "#ff000000",
+    "mapTextColor": "#ff000000",
+    "paths": [
+     {
+      "name": "Path9",
+      "stages": [
+       {
+        "name": "Posit1",
+        "latitude": 25.204444829358476,
+        "longitude": -80.2208741054493,
+        "navigation": {
+         "velocity": 1.54333687,
+         "altitude": 4,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 800
+         }
+        }
+       }
+      ]
+     }
+    ],
+    "home": {},
+    "maxDepth": 300,
+    "payloadKeys": [
+     2
+    ]
+   },
+   {
+    "serialNumber": "SBSDA14_2403002",
+    "name": "Posit2",
+    "type": "DEVICE_SURFACE_REPOSITIONING_BUOY",
+    "mapTracesColor": "#ff000000",
+    "mapTextColor": "#ff000000",
+    "paths": [
+     {
+      "name": "Path10",
+      "stages": [
+       {
+        "name": "Posit2",
+        "latitude": 25.207568461005145,
+        "longitude": -80.218357658637814,
+        "navigation": {
+         "velocity": 1.54333687,
+         "altitude": 4,
+         "waypoint": {
+          "radius": 10,
+          "timeout": 800
+         }
+        }
+       }
+      ]
+     }
+    ],
+    "home": {},
+    "maxDepth": 300,
+    "payloadKeys": [
+     3
+    ]
+   }
+  ],
+  "dictionary": {
+   "messages": [
+    {
+     "text": "GOING UP",
+     "key": {
+      "value": "1"
+     }
+    },
+    {
+     "text": "GOING DOWN",
+     "key": {
+      "value": "2"
+     }
+    },
+    {
+     "text": "ALL IS GOOD",
+     "key": {
+      "value": "3"
+     }
+    },
+    {
+     "text": "ROGER",
+     "key": {
+      "value": "4"
+     }
+    }
+   ]
+  },
+  "racamCelerity": 1543,
+  "editDatetime": 1724720235,
+  "store": {
+   "3": {
+    "name": "RACAM_NewDevice4",
+    "racam": {
+     "modem": {
+      "numid": 3,
+      "frequency": 18000,
+      "gain": -3,
+      "delay": 9,
+      "period": 12
+     },
+     "localize": {},
+     "celerity": 1543,
+     "transducerDepth": 3
+    }
+   },
+   "4": {
+    "name": "Swordfish",
+    "cameraSwordfish": {
+     "info": {
+      "optionEnable": true
+     },
+     "cameraState": "CAMERA_STATE_ON_PHOTO",
+     "cameraSettings": {
+      "exposureMode": "EXPOSURE_GAIN_AUTO",
+      "minimumExposure": 50,
+      "maximumExposure": 50000,
+      "exposure": 50,
+      "gainMode": "EXPOSURE_GAIN_AUTO",
+      "maximumGain": 47,
+      "autoPriority": "ALGO_EXPOSURE_TIME_PRIORITY",
+      "awdMode": "MODE_CONTINUOUS"
+     },
+     "photoSettings": {
+      "strobeMode": "STROBE_SYNC_TO_SHUTTER",
+      "quality": 1000,
+      "framerate": 500
+     },
+     "videoSettings": {
+      "resolution": "RESOLUTION_FHD",
+      "framerate": 30,
+      "quality": 750
+     }
+    }
+   },
+   "0": {
+    "name": "RACAM_NewDevice1",
+    "racam": {
+     "modem": {
+      "frequency": 18000,
+      "gain": -3,
+      "period": 12
+     },
+     "localize": {},
+     "celerity": 1543,
+     "transducerDepth": 3
+    }
+   },
+   "1": {
+    "name": "RACAM_NewDevice2",
+    "racam": {
+     "modem": {
+      "numid": 1,
+      "frequency": 18000,
+      "gain": -3,
+      "delay": 3,
+      "period": 12
+     },
+     "localize": {
+      "optionEnable": true,
+      "timeout": 600
+     },
+     "celerity": 1543,
+     "transducerDepth": 3
+    }
+   },
+   "2": {
+    "name": "RACAM_NewDevice3",
+    "racam": {
+     "modem": {
+      "numid": 2,
+      "frequency": 18000,
+      "gain": -3,
+      "delay": 6,
+      "period": 12
+     },
+     "localize": {},
+     "celerity": 1543,
+     "transducerDepth": 3
+    }
+   }
+  }
+ },
+ "devicesui": [
+  {
+   "mapColor": "#ffff0000"
+  },
+  {
+   "mapColor": "#ffff0000"
+  },
+  {
+   "mapColor": "#ff00ff00"
+  },
+  {
+   "mapColor": "#ff00ff00"
+  }
+ ],
+ "storeui": {
+  "2": {},
+  "1": {},
+  "3": {},
+  "0": {},
+  "4": {}
+ }
+}

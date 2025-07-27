@@ -1,0 +1,2005 @@
+{
+  "mission": {
+    "name": "Test_photogrammetry_rails_Zamboni",
+    "comment": "Zamboni pattern - 26.07.2025 18:09:36",
+    "devices": [
+      {
+        "serialNumber": "SUSDA14_2403001",
+        "name": "SCM",
+        "type": "DEVICE_SURFACE",
+        "mapTracesColor": "#ff000000",
+        "mapTextColor": "#ff000000",
+        "home": {},
+        "maxDepth": 300,
+        "payloadKeys": [
+          0
+        ]
+      },
+      {
+        "serialNumber": "NEMOSENS_2309001",
+        "name": "NemoSens",
+        "type": "DEVICE_DRONE",
+        "mapTracesColor": "#ff000000",
+        "mapTextColor": "#ff000000",
+        "paths": [
+          {
+            "name": "Path4",
+            "stages": [
+              {
+                "name": "WP3",
+                "latitude": 34.666014553871584,
+                "longitude": -76.65435274499985,
+                "navigation": {
+                  "depth": 1,
+                  "duck": {
+                    "timeout": 450
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Path5",
+            "stages": [
+              {
+                "name": "WP4",
+                "latitude": 34.665745415153424,
+                "longitude": -76.65357798174098,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "depth": 5,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 300
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Path6",
+            "stages": [
+              {
+                "name": "WP5",
+                "latitude": 34.66532582213663,
+                "longitude": -76.65234745445036,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 5,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 300
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Path7",
+            "stages": [
+              {
+                "name": "WP6",
+                "latitude": 34.66490622697558,
+                "longitude": -76.65127318459348,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 4,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 300
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Path8",
+            "stages": [
+              {
+                "name": "WP7",
+                "latitude": 34.6645350448534,
+                "longitude": -76.65047236524562,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 300
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "RailFamily1",
+            "type": "PATH_RAIL",
+            "stages": [
+              {
+                "name": "J1 A",
+                "latitude": 34.663693369719795,
+                "longitude": -76.64927407242006,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J1 B",
+                "latitude": 34.66155110316213,
+                "longitude": -76.64568176377219,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J32 B",
+                "latitude": 34.6630899024466,
+                "longitude": -76.64997835498578,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J32 A",
+                "latitude": 34.66094763567666,
+                "longitude": -76.64638602821286,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J2 B",
+                "latitude": 34.66367390309767,
+                "longitude": -76.6492967913719,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J2 A",
+                "latitude": 34.66153163653311,
+                "longitude": -76.64570448213934,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J33 A",
+                "latitude": 34.66307043569165,
+                "longitude": -76.6500010736082,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J33 B",
+                "latitude": 34.66092816891487,
+                "longitude": -76.6464087462506,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J3 A",
+                "latitude": 34.66365443647157,
+                "longitude": -76.6493195103131,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J3 B",
+                "latitude": 34.6615121699002,
+                "longitude": -76.64572720049584,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J34 B",
+                "latitude": 34.6630509689324,
+                "longitude": -76.65002379221998,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J34 A",
+                "latitude": 34.660908702148774,
+                "longitude": -76.64643146427774,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J4 B",
+                "latitude": 34.6636349698412,
+                "longitude": -76.6493422292437,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J4 A",
+                "latitude": 34.66149270326296,
+                "longitude": -76.64574991884174,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J35 A",
+                "latitude": 34.663031502168856,
+                "longitude": -76.65004651082116,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J35 B",
+                "latitude": 34.660889235378384,
+                "longitude": -76.64645418229425,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J5 A",
+                "latitude": 34.66361550320652,
+                "longitude": -76.64936494816367,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J5 B",
+                "latitude": 34.66147323662144,
+                "longitude": -76.645772637177,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J36 B",
+                "latitude": 34.66301203540101,
+                "longitude": -76.65006922941168,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J36 A",
+                "latitude": 34.66086976860372,
+                "longitude": -76.64647690030013,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J6 B",
+                "latitude": 34.663596036567554,
+                "longitude": -76.649387667073,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J6 A",
+                "latitude": 34.66145376997562,
+                "longitude": -76.64579535550166,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J37 A",
+                "latitude": 34.66299256862889,
+                "longitude": -76.6500919479916,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J37 B",
+                "latitude": 34.66085030182475,
+                "longitude": -76.6464996182954,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J7 A",
+                "latitude": 34.66357656992428,
+                "longitude": -76.6494103859717,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J7 B",
+                "latitude": 34.66143430332551,
+                "longitude": -76.64581807381566,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J38 B",
+                "latitude": 34.66297310185246,
+                "longitude": -76.65011466656088,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J38 A",
+                "latitude": 34.66083083504146,
+                "longitude": -76.64652233628001,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J8 B",
+                "latitude": 34.66355710327673,
+                "longitude": -76.6494331048598,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J8 A",
+                "latitude": 34.66141483667109,
+                "longitude": -76.64584079211907,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J39 A",
+                "latitude": 34.66295363507174,
+                "longitude": -76.65013738511955,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J39 B",
+                "latitude": 34.66081136825392,
+                "longitude": -76.646545054254,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J9 A",
+                "latitude": 34.66353763662486,
+                "longitude": -76.64945582373724,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J9 B",
+                "latitude": 34.66139537001237,
+                "longitude": -76.64586351041183,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J40 B",
+                "latitude": 34.66293416828672,
+                "longitude": -76.65016010366757,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J40 A",
+                "latitude": 34.66079190146205,
+                "longitude": -76.64656777221741,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J10 B",
+                "latitude": 34.66351816996871,
+                "longitude": -76.64947854260407,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J10 A",
+                "latitude": 34.66137590334938,
+                "longitude": -76.64588622869398,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J41 A",
+                "latitude": 34.66291470149739,
+                "longitude": -76.65018282220498,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J41 B",
+                "latitude": 34.66077243466588,
+                "longitude": -76.64659049017015,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J11 A",
+                "latitude": 34.663498703308264,
+                "longitude": -76.64950126146027,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J11 B",
+                "latitude": 34.66135643668209,
+                "longitude": -76.64590894696549,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J42 B",
+                "latitude": 34.6628952347038,
+                "longitude": -76.65020554073178,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J42 A",
+                "latitude": 34.66075296786544,
+                "longitude": -76.64661320811227,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J12 B",
+                "latitude": 34.66347923664352,
+                "longitude": -76.64952398030584,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J12 A",
+                "latitude": 34.6613369700105,
+                "longitude": -76.64593166522637,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J43 A",
+                "latitude": 34.662875767905874,
+                "longitude": -76.65022825924791,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J43 B",
+                "latitude": 34.6607335010607,
+                "longitude": -76.64663592604379,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J13 A",
+                "latitude": 34.6634597699745,
+                "longitude": -76.64954669914079,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J13 B",
+                "latitude": 34.66131750333461,
+                "longitude": -76.64595438347665,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J44 B",
+                "latitude": 34.66285630110367,
+                "longitude": -76.65025097775344,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J44 A",
+                "latitude": 34.660714034251654,
+                "longitude": -76.64665864396467,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J14 B",
+                "latitude": 34.66344030330115,
+                "longitude": -76.64956941796511,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J14 A",
+                "latitude": 34.66129803665444,
+                "longitude": -76.64597710171628,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J45 A",
+                "latitude": 34.662836834297174,
+                "longitude": -76.65027369624836,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J45 B",
+                "latitude": 34.66069456743831,
+                "longitude": -76.64668136187493,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J15 A",
+                "latitude": 34.66342083662353,
+                "longitude": -76.64959213677882,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J15 B",
+                "latitude": 34.66127856996995,
+                "longitude": -76.6459998199453,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J46 B",
+                "latitude": 34.662817367484294,
+                "longitude": -76.65029641473508,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J46 A",
+                "latitude": 34.66067510061858,
+                "longitude": -76.64670407977702,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J16 B",
+                "latitude": 34.66340136994161,
+                "longitude": -76.64961485558189,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J16 A",
+                "latitude": 34.66125910328118,
+                "longitude": -76.64602253816369,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J47 A",
+                "latitude": 34.66279790066914,
+                "longitude": -76.65031913320878,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J47 B",
+                "latitude": 34.660655633796615,
+                "longitude": -76.64672679766608,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J17 A",
+                "latitude": 34.663381903255384,
+                "longitude": -76.64963757437431,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J17 B",
+                "latitude": 34.661239636588114,
+                "longitude": -76.64604525637147,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J48 B",
+                "latitude": 34.66277843384972,
+                "longitude": -76.65034185167187,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J48 A",
+                "latitude": 34.66063616697034,
+                "longitude": -76.6467495155445,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J18 B",
+                "latitude": 34.66336243656486,
+                "longitude": -76.64966029315613,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J18 A",
+                "latitude": 34.66122016989075,
+                "longitude": -76.6460679745686,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J49 A",
+                "latitude": 34.662758967025994,
+                "longitude": -76.65036457012431,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J49 B",
+                "latitude": 34.66061670013978,
+                "longitude": -76.64677223341232,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J19 A",
+                "latitude": 34.663342969870065,
+                "longitude": -76.64968301192734,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J19 B",
+                "latitude": 34.66120070318908,
+                "longitude": -76.6460906927551,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J50 B",
+                "latitude": 34.66273950019797,
+                "longitude": -76.65038728856614,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J50 A",
+                "latitude": 34.660597233304905,
+                "longitude": -76.6467949512695,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J20 B",
+                "latitude": 34.66332350317094,
+                "longitude": -76.6497057306879,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J20 A",
+                "latitude": 34.66118123648314,
+                "longitude": -76.646113410931,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J51 A",
+                "latitude": 34.662720033365645,
+                "longitude": -76.65041000699735,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J51 B",
+                "latitude": 34.660577766465764,
+                "longitude": -76.64681766911606,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J21 A",
+                "latitude": 34.663304036467544,
+                "longitude": -76.64972844943783,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J21 B",
+                "latitude": 34.661161769772896,
+                "longitude": -76.64613612909625,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J52 B",
+                "latitude": 34.66270056652905,
+                "longitude": -76.6504327254179,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J52 A",
+                "latitude": 34.66055829962232,
+                "longitude": -76.646840386952,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J22 B",
+                "latitude": 34.663284569759846,
+                "longitude": -76.64975116817715,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J22 A",
+                "latitude": 34.661142303058334,
+                "longitude": -76.64615884725089,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J53 A",
+                "latitude": 34.66268109968812,
+                "longitude": -76.65045544382787,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J53 B",
+                "latitude": 34.66053883277458,
+                "longitude": -76.64686310477731,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J23 A",
+                "latitude": 34.66326510304785,
+                "longitude": -76.6497738869058,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J23 B",
+                "latitude": 34.661122836339516,
+                "longitude": -76.6461815653949,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J54 B",
+                "latitude": 34.66266163284293,
+                "longitude": -76.65047816222717,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J54 A",
+                "latitude": 34.66051936592253,
+                "longitude": -76.64688582259198,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J24 B",
+                "latitude": 34.66324563633155,
+                "longitude": -76.64979660562388,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J24 A",
+                "latitude": 34.66110336961637,
+                "longitude": -76.64620428352829,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J55 A",
+                "latitude": 34.66264216599345,
+                "longitude": -76.65050088061587,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J55 B",
+                "latitude": 34.66049989906622,
+                "longitude": -76.64690854039604,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J25 A",
+                "latitude": 34.66322616961098,
+                "longitude": -76.6498193243313,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J25 B",
+                "latitude": 34.66108390288893,
+                "longitude": -76.64622700165104,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J56 B",
+                "latitude": 34.662622699139625,
+                "longitude": -76.65052359899396,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J56 A",
+                "latitude": 34.660480432205574,
+                "longitude": -76.64693125818947,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J26 B",
+                "latitude": 34.663206702886086,
+                "longitude": -76.64984204302812,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J26 A",
+                "latitude": 34.66106443615721,
+                "longitude": -76.64624971976318,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J57 A",
+                "latitude": 34.662603232281555,
+                "longitude": -76.65054631736137,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J57 B",
+                "latitude": 34.660460965340654,
+                "longitude": -76.64695397597228,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J27 A",
+                "latitude": 34.66318723615691,
+                "longitude": -76.6498647617143,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J27 B",
+                "latitude": 34.6610449694212,
+                "longitude": -76.6462724378647,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J58 B",
+                "latitude": 34.66258376541918,
+                "longitude": -76.6505690357182,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J58 A",
+                "latitude": 34.660441498471435,
+                "longitude": -76.64697669374448,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J28 B",
+                "latitude": 34.66316776942344,
+                "longitude": -76.64988748038984,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J28 A",
+                "latitude": 34.66102550268088,
+                "longitude": -76.64629515595557,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J59 A",
+                "latitude": 34.662564298552475,
+                "longitude": -76.65059175406438,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J59 B",
+                "latitude": 34.66042203159792,
+                "longitude": -76.64699941150603,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J29 A",
+                "latitude": 34.66314830268566,
+                "longitude": -76.64991019905476,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J29 B",
+                "latitude": 34.66100603593626,
+                "longitude": -76.64631787403583,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J60 B",
+                "latitude": 34.6625448316815,
+                "longitude": -76.65061447239995,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J60 A",
+                "latitude": 34.660402564720094,
+                "longitude": -76.64702212925697,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J30 B",
+                "latitude": 34.66312883594362,
+                "longitude": -76.64993291770905,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J30 A",
+                "latitude": 34.660986569187344,
+                "longitude": -76.64634059210546,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J61 A",
+                "latitude": 34.66252536480623,
+                "longitude": -76.6506371907249,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J61 B",
+                "latitude": 34.66038309783801,
+                "longitude": -76.64704484699726,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J31 A",
+                "latitude": 34.663109369197244,
+                "longitude": -76.64995563635274,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J31 B",
+                "latitude": 34.66096710243416,
+                "longitude": -76.64636331016447,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J62 B",
+                "latitude": 34.66250589792668,
+                "longitude": -76.65065990903919,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railEnd": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              },
+              {
+                "name": "J62 A",
+                "latitude": 34.66036363095161,
+                "longitude": -76.64706756472694,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "railBegin": {
+                    "timeout": 300,
+                    "radius": 10
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Path10",
+            "stages": [
+              {
+                "name": "WP8",
+                "latitude": 34.66348789863094,
+                "longitude": -76.65049507933573,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 3,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 300
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Path11",
+            "stages": [
+              {
+                "name": "WP9",
+                "latitude": 34.664059150697085,
+                "longitude": -76.65156220306571,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 4,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 300
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Path12",
+            "stages": [
+              {
+                "name": "WP10",
+                "latitude": 34.664754582630984,
+                "longitude": -76.65262932679569,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "altitude": 5,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 300
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Path13",
+            "stages": [
+              {
+                "name": "WP11",
+                "latitude": 34.665214061213035,
+                "longitude": -76.6536663907023,
+                "navigation": {
+                  "velocity": 1.54333687,
+                  "depth": 5,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 300
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Path14",
+            "stages": [
+              {
+                "name": "WP12",
+                "latitude": 34.66540033558138,
+                "longitude": -76.65453812558033,
+                "navigation": {
+                  "velocity": 1,
+                  "depth": 0,
+                  "surface": {
+                    "timeout": 60
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "home": {},
+        "maxDepth": 300,
+        "payloadKeys": [
+          1
+        ]
+      },
+      {
+        "serialNumber": "SBSDA14_2302001",
+        "name": "Posit1",
+        "type": "DEVICE_SURFACE_REPOSITIONING_BUOY",
+        "mapTracesColor": "#ff000000",
+        "mapTextColor": "#ff000000",
+        "paths": [
+          {
+            "name": "Path2",
+            "stages": [
+              {
+                "name": "WP1",
+                "latitude": 34.67051484818344,
+                "longitude": -76.64400711805415,
+                "navigation": {
+                  "velocity": 1,
+                  "altitude": 1,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 60
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "home": {},
+        "maxDepth": 300,
+        "payloadKeys": [
+          2
+        ]
+      },
+      {
+        "serialNumber": "SBSDA14_2302002",
+        "name": "Posit2",
+        "type": "DEVICE_SURFACE_REPOSITIONING_BUOY",
+        "mapTracesColor": "#ff000000",
+        "mapTextColor": "#ff000000",
+        "paths": [
+          {
+            "name": "Path3",
+            "stages": [
+              {
+                "name": "WP2",
+                "latitude": 34.662149493173544,
+                "longitude": -76.62058693969178,
+                "navigation": {
+                  "velocity": 1,
+                  "altitude": 1,
+                  "waypoint": {
+                    "radius": 10,
+                    "timeout": 60
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "home": {},
+        "maxDepth": 300,
+        "payloadKeys": [
+          3
+        ]
+      }
+    ],
+    "dictionary": {
+      "messages": [
+        {
+          "text": "GOING UP",
+          "key": {
+            "value": "1"
+          }
+        },
+        {
+          "text": "GOING DOWN",
+          "key": {
+            "value": "2"
+          }
+        },
+        {
+          "text": "ALL IS GOOD",
+          "key": {
+            "value": "3"
+          }
+        },
+        {
+          "text": "ROGER",
+          "key": {
+            "value": "4"
+          }
+        }
+      ]
+    },
+    "racamCelerity": 1400,
+    "editDatetime": 1753581694,
+    "store": {
+      "1": {
+        "name": "RACAM_NewDevice2",
+        "racam": {
+          "modem": {
+            "numid": 1,
+            "frequency": 18000,
+            "gain": -3,
+            "delay": 3,
+            "period": 12
+          },
+          "localize": {
+            "optionEnable": true
+          },
+          "celerity": 1400,
+          "transducerDepth": 3
+        }
+      },
+      "2": {
+        "name": "RACAM_NewDevice3",
+        "racam": {
+          "modem": {
+            "numid": 2,
+            "frequency": 18000,
+            "gain": -3,
+            "delay": 6,
+            "period": 12
+          },
+          "localize": {},
+          "celerity": 1400,
+          "transducerDepth": 3
+        }
+      },
+      "0": {
+        "name": "RACAM_NewDevice1",
+        "racam": {
+          "modem": {
+            "frequency": 18000,
+            "gain": -3,
+            "period": 12
+          },
+          "localize": {},
+          "celerity": 1400,
+          "transducerDepth": 3
+        }
+      },
+      "3": {
+        "name": "RACAM_NewDevice4",
+        "racam": {
+          "modem": {
+            "numid": 3,
+            "frequency": 18000,
+            "gain": -3,
+            "delay": 9,
+            "period": 12
+          },
+          "localize": {},
+          "celerity": 1400,
+          "transducerDepth": 3
+        }
+      }
+    }
+  },
+  "devicesui": [
+    {
+      "mapColor": "#ffff0000"
+    },
+    {
+      "mapColor": "#ffff0000"
+    },
+    {
+      "mapColor": "#ffff0000"
+    },
+    {
+      "mapColor": "#ffff0000"
+    }
+  ],
+  "storeui": {
+    "0": {},
+    "1": {},
+    "2": {},
+    "3": {}
+  }
+}
