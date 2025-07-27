@@ -142,71 +142,102 @@ class ZamboniConverter:
     
     def _create_zamboni_pattern(self, lines: List[List[Dict]]) -> List[List[Dict]]:
         """
-        Create zamboni pattern by interleaving lines between top and bottom halves.
-        Pattern: L1, L11(recip), L2(recip), L12, L3, L13(recip), L4(recip), L14, L5, L15(recip), etc.
-        Top half runs east, bottom half runs west.
+        Create zamboni pattern using the corrected algorithm:
+        
+        1. Divide lines into halves (1-10 first half, 11-20 second half)
+        2. First half: odd lines normal (A→B), even lines reversed (B→A)  
+        3. Second half: even lines normal (A→B), odd lines reversed (B→A)
+        4. Interleave: pos1 first half, pos1 second half, pos2 first half, pos2 second half, etc.
+        
+        This ensures all first half lines go one way and all second half lines go the other way.
         """
         if len(lines) < 2:
             print(f"Not enough lines ({len(lines)}) for zamboni pattern, returning as-is")
             return lines
             
-        zamboni_lines = []
         total_lines = len(lines)
         half_lines = total_lines // 2
         
         print(f"\n=== ZAMBONI PATTERN CREATION ===")
         print(f"Total lines: {total_lines}")
         print(f"Half lines: {half_lines}")
-        print(f"First half: Lines 1-{half_lines} (indices 0-{half_lines-1})")
-        print(f"Second half: Lines {half_lines+1}-{total_lines} (indices {half_lines}-{total_lines-1})")
+        print(f"Algorithm: First half odd=normal/even=reversed, Second half even=normal/odd=reversed")
         print()
         
-        # Create the zamboni pattern following the specified sequence
+        # Step 1: Apply direction rules to each half
+        first_half_lines = []
+        second_half_lines = []
+        
+        # Process first half (lines 1 to half_lines)
+        print("=== FIRST HALF DIRECTION PROCESSING ===")
         for i in range(half_lines):
-            position_in_zamboni = len(zamboni_lines) + 1
+            line = lines[i].copy()
+            line_num = i + 1  # 1-indexed line number
+            line_name = line[0]['name'][:-2] if len(line) == 2 and line[0]['name'].endswith(' A') else line[0]['name']
             
-            # Add line from first half (L1, L2, L3, etc.)
-            first_half_line = lines[i].copy()
+            # First half: odd lines normal (A→B), even lines reversed (B→A)
+            if line_num % 2 == 1:  # Odd line numbers (1, 3, 5, 7, 9...)
+                direction = "NORMAL (A→B)"
+                # Keep line as-is for normal direction
+            else:  # Even line numbers (2, 4, 6, 8, 10...)
+                direction = "REVERSED (B→A)"
+                # Reverse the line for reversed direction
+                if len(line) == 2:
+                    line = [line[1], line[0]]
+            
+            print(f"First half line {line_num:2d} ({line_name}): {direction}")
+            first_half_lines.append(line)
+        
+        # Process second half (lines half_lines+1 to total_lines)  
+        print("\n=== SECOND HALF DIRECTION PROCESSING ===")
+        for i in range(half_lines, total_lines):
+            line = lines[i].copy()
+            line_num = i + 1  # 1-indexed line number
+            line_name = line[0]['name'][:-2] if len(line) == 2 and line[0]['name'].endswith(' A') else line[0]['name']
+            
+            # Second half: even lines normal (A→B), odd lines reversed (B→A)
+            if line_num % 2 == 0:  # Even line numbers (12, 14, 16, 18, 20...)
+                direction = "NORMAL (A→B)"
+                # Keep line as-is for normal direction
+            else:  # Odd line numbers (11, 13, 15, 17, 19...)
+                direction = "REVERSED (B→A)"
+                # Reverse the line for reversed direction
+                if len(line) == 2:
+                    line = [line[1], line[0]]
+            
+            print(f"Second half line {line_num:2d} ({line_name}): {direction}")
+            second_half_lines.append(line)
+        
+        # Step 2: Interleave the halves
+        print("\n=== INTERLEAVING HALVES ===")
+        zamboni_lines = []
+        
+        for i in range(half_lines):
+            zamboni_pos = len(zamboni_lines) + 1
+            
+            # Add first half line
+            first_line = first_half_lines[i]
             first_line_num = i + 1
-            first_line_name = first_half_line[0]['name'][:-2] if len(first_half_line) == 2 and first_half_line[0]['name'].endswith(' A') else first_half_line[0]['name']
+            first_line_name = first_line[0]['name'][:-2] if len(first_line) == 2 and first_line[0]['name'].endswith(' A') else first_line[0]['name']
+            print(f"Zamboni pos {zamboni_pos:2d}: First half line {first_line_num:2d} ({first_line_name})")
+            zamboni_lines.append(first_line)
             
-            # Even positions (0, 2, 4...) = normal direction for first half
-            # Odd positions (1, 3, 5...) = reciprocal direction for first half
-            if i % 2 == 1 and len(first_half_line) == 2:  # L2, L4, L6, L8, L10 get reciprocal
-                first_half_line = [first_half_line[1], first_half_line[0]]
-                first_direction = "REVERSED"
-            else:
-                first_direction = "NORMAL"
-            
-            print(f"Zamboni pos {position_in_zamboni:2d}: Line {first_line_num:2d} ({first_line_name}) - {first_direction}")
-            zamboni_lines.append(first_half_line)
-            
-            # Add corresponding line from second half (L11, L12, L13, etc.)
-            second_half_idx = half_lines + i
-            if second_half_idx < total_lines:
-                position_in_zamboni = len(zamboni_lines) + 1
-                second_half_line = lines[second_half_idx].copy()
-                second_line_num = second_half_idx + 1
-                second_line_name = second_half_line[0]['name'][:-2] if len(second_half_line) == 2 and second_half_line[0]['name'].endswith(' A') else second_half_line[0]['name']
-                
-                # Even positions (0, 2, 4...) = reciprocal direction for second half
-                # Odd positions (1, 3, 5...) = normal direction for second half
-                if i % 2 == 0 and len(second_half_line) == 2:  # L11, L13, L15, L17, L19 get reciprocal
-                    second_half_line = [second_half_line[1], second_half_line[0]]
-                    second_direction = "REVERSED"
-                else:
-                    second_direction = "NORMAL"
-                
-                print(f"Zamboni pos {position_in_zamboni:2d}: Line {second_line_num:2d} ({second_line_name}) - {second_direction}")
-                zamboni_lines.append(second_half_line)
+            # Add corresponding second half line
+            if i < len(second_half_lines):
+                zamboni_pos = len(zamboni_lines) + 1
+                second_line = second_half_lines[i]
+                second_line_num = half_lines + i + 1
+                second_line_name = second_line[0]['name'][:-2] if len(second_line) == 2 and second_line[0]['name'].endswith(' A') else second_line[0]['name']
+                print(f"Zamboni pos {zamboni_pos:2d}: Second half line {second_line_num:2d} ({second_line_name})")
+                zamboni_lines.append(second_line)
         
         # Handle any remaining lines if total is odd
         if total_lines % 2 == 1:
-            position_in_zamboni = len(zamboni_lines) + 1
+            zamboni_pos = len(zamboni_lines) + 1
             remaining_line = lines[-1].copy()
             remaining_line_num = total_lines
             remaining_line_name = remaining_line[0]['name'][:-2] if len(remaining_line) == 2 and remaining_line[0]['name'].endswith(' A') else remaining_line[0]['name']
-            print(f"Zamboni pos {position_in_zamboni:2d}: Line {remaining_line_num:2d} ({remaining_line_name}) - REMAINING (odd total)")
+            print(f"Zamboni pos {zamboni_pos:2d}: Remaining line {remaining_line_num:2d} ({remaining_line_name}) - (odd total)")
             zamboni_lines.append(remaining_line)
         
         print(f"\nCreated zamboni pattern with {len(zamboni_lines)} lines")
