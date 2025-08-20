@@ -17,6 +17,7 @@ from tkinter import filedialog
 from PIL import Image, ImageTk, ExifTags
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import gc
 
 ImageX = 900  # Monitor = 1100, Laptop = 900
 ImageY = 750  # Monitor = 750
@@ -27,13 +28,26 @@ class ImageSlideshow(tk.Tk):
         super().__init__()
         self.title("Image QAQCer")
         self.slideshow_interval = slideshow_interval
-        self.thumbnail_size = (ImageX, ImageY)  # Set before the class
+        self.base_thumbnail_size = (ImageX, ImageY)  # Base size for reference
+        self.thumbnail_size = (ImageX, ImageY)  # Current size (will be dynamic)
 
         self.image_files = []
         self.current_index = 0
         self.is_playing = False
         self.slideshow_id = None
         self.locations = []
+        
+        # Performance optimizations
+        self.image_cache = {}  # Cache for thumbnails
+        self.exif_cache = {}   # Cache for EXIF data
+        self.cache_size_limit = 50  # Limit cache to prevent memory issues
+        self.fig = None  # Reuse single figure
+        self.ax = None
+        self.canvas = None
+        
+        # Track the original image for resizing
+        self.current_image_path = None
+        self.current_original_image = None
 
         # Create a frame for the image and the side panel (text + plot)
         self.display_frame = tk.Frame(self)
@@ -54,6 +68,9 @@ class ImageSlideshow(tk.Tk):
         # Add a frame for the plot below the text sidebar
         self.plot_frame = tk.Frame(self.side_panel)
         self.plot_frame.pack()
+        
+        # Initialize the plot once
+        self.init_plot()
 
         # Filename label below the image
         self.filename_label = tk.Label(self, text="")
@@ -78,8 +95,74 @@ class ImageSlideshow(tk.Tk):
 
         self.update_idletasks()  # Ensure the widget size is updated
         self.minsize(self.winfo_width(), self.winfo_height())
+        
+        # Bind window resize event
+        self.bind('<Configure>', self.on_window_resize)
 
         self.select_image_folder()
+
+    def init_plot(self):
+        """Initialize the plot once and reuse it"""
+        self.fig, self.ax = plt.subplots(figsize=(4, 3))
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack()
+
+    def cleanup_cache(self):
+        """Clean up caches when they get too large"""
+        if len(self.image_cache) > self.cache_size_limit:
+            # Remove oldest half of cache
+            items_to_remove = len(self.image_cache) // 2
+            for _ in range(items_to_remove):
+                self.image_cache.popitem()
+        
+        if len(self.exif_cache) > self.cache_size_limit:
+            items_to_remove = len(self.exif_cache) // 2
+            for _ in range(items_to_remove):
+                self.exif_cache.popitem()
+        
+        # Force garbage collection
+        gc.collect()
+
+    def on_window_resize(self, event):
+        """Handle window resize events to adjust image size"""
+        # Only respond to resize events from the main window
+        if event.widget == self:
+            # Calculate available space for the image
+            window_width = self.winfo_width()
+            window_height = self.winfo_height()
+            
+            # Account for side panel and controls (approximately)
+            side_panel_width = 300  # Approximate width of side panel
+            controls_height = 100   # Approximate height of controls and slider
+            
+            available_width = max(400, window_width - side_panel_width - 20)  # Minimum 400px
+            available_height = max(300, window_height - controls_height - 20)  # Minimum 300px
+            
+            # Update thumbnail size if it changed significantly
+            new_size = (available_width, available_height)
+            if abs(new_size[0] - self.thumbnail_size[0]) > 50 or abs(new_size[1] - self.thumbnail_size[1]) > 50:
+                self.thumbnail_size = new_size
+                # Clear image cache since we're changing sizes
+                self.image_cache.clear()
+                # Refresh current image with new size
+                if self.current_index < len(self.image_files):
+                    self.show_image(self.current_index)
+
+    def resize_current_image(self):
+        """Resize the current image to fit the new thumbnail size"""
+        if self.current_original_image and self.current_image_path:
+            # Create a copy and resize it
+            image_copy = self.current_original_image.copy()
+            image_copy.thumbnail(self.thumbnail_size)
+            photo = ImageTk.PhotoImage(image_copy)
+            
+            # Update the display
+            self.image_label.config(image=photo)
+            self.image_label.image = photo
+            
+            # Update cache with new size
+            self.image_cache[self.current_image_path] = photo
 
     def select_image_folder(self):
         folder_path = filedialog.askdirectory(title="Select Image Folder")
@@ -90,15 +173,45 @@ class ImageSlideshow(tk.Tk):
                 self.show_image(self.current_index)
 
     def load_image_files(self, folder_path):
-        self.image_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
-                            if f.lower().endswith(('.jpg', '.jpeg', '.png', '.tiff', '.tif'))]
+        # Filter out raw images and only include processed images
+        self.image_files = []
+        for f in os.listdir(folder_path):
+            if f.lower().endswith(('.jpg', '.jpeg', '.png')):
+                # Skip raw files - look for common raw image indicators
+                if 'raw' not in f.lower():
+                    self.image_files.append(os.path.join(folder_path, f))
 
     def load_image(self, index):
         if index >= 0 and index < len(self.image_files):
             image_path = self.image_files[index]
+            self.current_image_path = image_path
+            
+            # Check cache first (but only if thumbnail size hasn't changed)
+            cache_key = f"{image_path}_{self.thumbnail_size[0]}x{self.thumbnail_size[1]}"
+            if cache_key in self.image_cache and image_path in self.exif_cache:
+                photo = self.image_cache[cache_key]
+                lat, lon, alt, image_text = self.exif_cache[image_path]
+                
+                # Update the text in the sidebar
+                self.text_sidebar.config(state=tk.NORMAL)
+                self.text_sidebar.delete(1.0, tk.END)
+                self.text_sidebar.insert(tk.END, image_text)
+                self.text_sidebar.config(state=tk.DISABLED)
+                
+                self.plot_coordinates(lat, lon)
+                return photo, os.path.basename(image_path)
+            
             try:
                 image = Image.open(image_path)
-                exif_data = image._getexif()
+                # Store the original image for resizing
+                self.current_original_image = image.copy()
+                
+                # Try to get EXIF data, handling different image formats
+                exif_data = None
+                if hasattr(image, '_getexif') and callable(image._getexif):
+                    exif_data = image._getexif()
+                elif hasattr(image, 'getexif'):
+                    exif_data = image.getexif()
             except Exception as e:
                 print(f"Failed to load image {image_path}: {e}")
                 return None, ""
@@ -122,13 +235,26 @@ class ImageSlideshow(tk.Tk):
                 # GPS Info (lat, lon, altitude)
                 gps_info = exif.get('GPSInfo', None)
                 if gps_info:
+                    lat_ref = self.get_if_exist(gps_info, 1)  # N or S
                     lat = self.get_if_exist(gps_info, 2)
+                    lon_ref = self.get_if_exist(gps_info, 3)  # E or W
                     lon = self.get_if_exist(gps_info, 4)
                     alt = self.get_if_exist(gps_info, 6)
 
                     if lat and lon:
                         lat = self.convert_to_degrees(lat)
                         lon = self.convert_to_degrees(lon)
+                        
+                        # Apply hemisphere corrections
+                        if lat_ref and lat_ref == 'S':
+                            lat = -lat
+                        if lon_ref and lon_ref == 'W':
+                            lon = -lon
+            else:
+                # Set default values when no EXIF data
+                date, time = "Unknown", "Unknown"
+                exposure_time = "Unknown"
+                subject_distance = "Unknown"
 
             # Populate text in sidebar
             image_text = f"Date:        {date}\n"
@@ -139,11 +265,20 @@ class ImageSlideshow(tk.Tk):
             image_text += f"Latitude:    {lat}\n"
             image_text += f"Longitude:   {lon}\n"
 
-            # Add the location to the list
-            self.locations.append((lat, lon))
+            # Add the location to the list only if not already there
+            if (lat, lon) not in self.locations:
+                self.locations.append((lat, lon))
 
+            # Create thumbnail with current size
             image.thumbnail(self.thumbnail_size)
             photo = ImageTk.PhotoImage(image)
+            
+            # Cache the results with size-specific key
+            self.image_cache[cache_key] = photo
+            self.exif_cache[image_path] = (lat, lon, alt, image_text)
+            
+            # Clean up cache if needed
+            self.cleanup_cache()
 
             # Update the text in the sidebar
             self.text_sidebar.config(state=tk.NORMAL)
@@ -163,26 +298,26 @@ class ImageSlideshow(tk.Tk):
         return d + (m / 60.0) + (s / 3600.0)
 
     def plot_coordinates(self, lat, lon):
-        fig, ax = plt.subplots(figsize=(4, 3))
+        if self.ax is None:
+            return
+            
+        # Clear the previous plot
+        self.ax.clear()
 
         valid_locations = [(lat, lon) for lat, lon in self.locations if lat != 999 and lon != 999]
         if valid_locations:
             all_lats, all_lons = zip(*valid_locations)
-            ax.scatter(all_lons, all_lats, label="All Locations", c='blue', s=30)
+            self.ax.scatter(all_lons, all_lats, label="All Locations", c='blue', s=30)
 
         if lat != 999 and lon != 999:
-            ax.scatter(lon, lat, label="Current Image", c='red', s=50)
+            self.ax.scatter(lon, lat, label="Current Image", c='red', s=50)
 
-        ax.set_xlabel("Longitude")
-        ax.set_ylabel("Latitude")
-        ax.legend()
-
-        for widget in self.plot_frame.winfo_children():
-            widget.destroy()
-
-        canvas = FigureCanvasTkAgg(fig, master=self.plot_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack()
+        self.ax.set_xlabel("Longitude")
+        self.ax.set_ylabel("Latitude")
+        self.ax.legend()
+        
+        # Redraw the canvas
+        self.canvas.draw_idle()  # Use draw_idle for better performance
 
     def show_image(self, index):
         if index >= 0 and index < len(self.image_files):
@@ -227,8 +362,18 @@ class ImageSlideshow(tk.Tk):
         if not self.is_playing:
             self.current_index = int(value)
             self.show_image(self.current_index)
+    
+    def on_closing(self):
+        """Clean up resources before closing"""
+        if self.fig:
+            plt.close(self.fig)
+        self.image_cache.clear()
+        self.exif_cache.clear()
+        gc.collect()
+        self.destroy()
 
 
 if __name__ == "__main__":
     app = ImageSlideshow()
+    app.protocol("WM_DELETE_WINDOW", app.on_closing)  # Handle window close
     app.mainloop()
