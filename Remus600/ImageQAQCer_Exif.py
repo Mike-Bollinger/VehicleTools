@@ -88,6 +88,14 @@ class ImageSlideshow(tk.Tk):
         self.forward_button.pack(side=tk.LEFT)
         self.backward_button = tk.Button(self.controls_frame, text="Backward", command=self.backward_image)
         self.backward_button.pack(side=tk.LEFT)
+        
+        # Add index seek functionality
+        tk.Label(self.controls_frame, text="Go to index:").pack(side=tk.LEFT, padx=(10, 5))
+        self.index_entry = tk.Entry(self.controls_frame, width=8)
+        self.index_entry.pack(side=tk.LEFT)
+        self.index_entry.bind('<Return>', self.on_index_entry)
+        self.go_button = tk.Button(self.controls_frame, text="Go", command=self.go_to_index)
+        self.go_button.pack(side=tk.LEFT, padx=(2, 0))
 
         # Slider for image navigation
         self.slider = tk.Scale(self, from_=0, to=0, orient=tk.HORIZONTAL, command=self.slider_changed)
@@ -98,6 +106,10 @@ class ImageSlideshow(tk.Tk):
         
         # Bind window resize event
         self.bind('<Configure>', self.on_window_resize)
+        
+        # Bind keyboard hotkeys
+        self.bind('<Key>', self.on_key_press)
+        self.focus_set()  # Ensure the window can receive keyboard events
 
         self.select_image_folder()
 
@@ -163,6 +175,22 @@ class ImageSlideshow(tk.Tk):
             
             # Update cache with new size
             self.image_cache[self.current_image_path] = photo
+
+    def on_key_press(self, event):
+        """Handle keyboard events for navigation"""
+        if event.keysym == 'Right':
+            self.forward_image()
+        elif event.keysym == 'Left':
+            self.backward_image()
+        elif event.keysym == 'space':
+            # Space bar toggles play/pause
+            if self.is_playing:
+                self.pause_slideshow()
+            else:
+                self.play_slideshow()
+        elif event.keysym == 'Escape':
+            # Escape key pauses slideshow
+            self.pause_slideshow()
 
     def select_image_folder(self):
         folder_path = filedialog.askdirectory(title="Select Image Folder")
@@ -362,6 +390,58 @@ class ImageSlideshow(tk.Tk):
         if not self.is_playing:
             self.current_index = int(value)
             self.show_image(self.current_index)
+    
+    def on_index_entry(self, event):
+        """Handle Enter key press in the index entry box"""
+        self.go_to_index()
+    
+    def go_to_index(self):
+        """Go to the specified image index with error handling"""
+        try:
+            # Get the index from the entry box
+            index_text = self.index_entry.get().strip()
+            if not index_text:
+                return
+            
+            target_index = int(index_text)
+            
+            # Check bounds
+            if target_index < 0:
+                self.show_index_error(f"Index {target_index} is too low. Minimum index is 0.")
+                return
+            elif target_index >= len(self.image_files):
+                max_index = len(self.image_files) - 1
+                self.show_index_error(f"Index {target_index} is too high. Maximum index is {max_index}.")
+                return
+            
+            # Valid index - navigate to it
+            self.pause_slideshow()  # Stop slideshow if running
+            self.current_index = target_index
+            self.show_image(self.current_index)
+            self.slider.set(self.current_index)
+            
+            # Clear the entry box
+            self.index_entry.delete(0, tk.END)
+            
+        except ValueError:
+            self.show_index_error(f"'{self.index_entry.get()}' is not a valid number.")
+    
+    def show_index_error(self, message):
+        """Show error message for invalid index input"""
+        # Flash the entry box red to indicate error
+        original_bg = self.index_entry.cget('bg')
+        self.index_entry.config(bg='#ffcccc')
+        
+        # Show error in filename label temporarily
+        original_text = self.filename_label.cget('text')
+        self.filename_label.config(text=f"Error: {message}", fg='red')
+        
+        # Reset after 3 seconds
+        def reset_error():
+            self.index_entry.config(bg=original_bg)
+            self.filename_label.config(text=original_text, fg='black')
+        
+        self.after(3000, reset_error)
     
     def on_closing(self):
         """Clean up resources before closing"""
