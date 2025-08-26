@@ -27,6 +27,10 @@ class ImageSlideshow(tk.Tk):
     def __init__(self, slideshow_interval=0.1):
         super().__init__()
         self.title("Image QAQCer")
+        
+        # Set window icon to camera emoji
+        self.set_camera_icon()
+        
         self.slideshow_interval = slideshow_interval
         self.base_thumbnail_size = (ImageX, ImageY)  # Base size for reference
         self.thumbnail_size = (ImageX, ImageY)  # Current size (will be dynamic)
@@ -112,6 +116,42 @@ class ImageSlideshow(tk.Tk):
         self.focus_set()  # Ensure the window can receive keyboard events
 
         self.select_image_folder()
+
+    def set_camera_icon(self):
+        """Set a camera emoji as the window icon"""
+        try:
+            # Create a simple camera icon using PIL
+            from PIL import Image, ImageDraw, ImageFont
+            
+            # Create a 32x32 icon
+            icon_size = 32
+            icon_image = Image.new('RGBA', (icon_size, icon_size), (255, 255, 255, 0))
+            draw = ImageDraw.Draw(icon_image)
+            
+            # Draw a simple camera shape
+            # Camera body (rectangle)
+            draw.rectangle([4, 10, 28, 26], fill='black', outline='gray')
+            
+            # Camera lens (circle)
+            draw.ellipse([10, 12, 22, 24], fill='gray', outline='black')
+            draw.ellipse([12, 14, 20, 22], fill='black')
+            
+            # Camera viewfinder (small rectangle on top)
+            draw.rectangle([12, 6, 20, 10], fill='black', outline='gray')
+            
+            # Convert to PhotoImage for tkinter
+            icon_photo = ImageTk.PhotoImage(icon_image)
+            
+            # Set the icon
+            self.iconphoto(True, icon_photo)
+            
+            # Keep a reference to prevent garbage collection
+            self.icon_photo = icon_photo
+            
+        except Exception as e:
+            # Fallback: try to use a Unicode camera emoji in the title
+            print(f"Could not set custom icon: {e}")
+            self.title("📷 Image QAQCer")
 
     def init_plot(self):
         """Initialize the plot once and reuse it"""

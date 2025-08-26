@@ -614,10 +614,58 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 # Set up global exception handler
 sys.excepthook = handle_exception
 
+def set_map_icon(window):
+    """Set a map emoji as the window icon"""
+    try:
+        # Import PIL components
+        from PIL import Image, ImageDraw, ImageTk
+        
+        # Create a 32x32 icon
+        icon_size = 32
+        icon_image = Image.new('RGBA', (icon_size, icon_size), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(icon_image)
+        
+        # Draw a simple map shape
+        # Map background (rectangle with rounded corners effect)
+        draw.rectangle([2, 4, 30, 28], fill='lightblue', outline='darkblue', width=2)
+        
+        # Draw landmasses (irregular shapes to represent continents)
+        # First landmass (upper left)
+        draw.polygon([(4, 8), (12, 6), (14, 12), (8, 14), (4, 10)], fill='green', outline='darkgreen')
+        
+        # Second landmass (center right)
+        draw.polygon([(18, 10), (28, 8), (26, 18), (20, 20), (16, 16)], fill='brown', outline='darkred')
+        
+        # Third landmass (bottom)
+        draw.polygon([(6, 20), (16, 22), (14, 26), (8, 24)], fill='green', outline='darkgreen')
+        
+        # Add grid lines to make it look more map-like
+        for i in range(6, 28, 6):
+            draw.line([(2, i), (30, i)], fill='blue', width=1)  # Horizontal lines
+            draw.line([(i, 4), (i, 28)], fill='blue', width=1)  # Vertical lines
+        
+        # Convert to PhotoImage for tkinter
+        icon_photo = ImageTk.PhotoImage(icon_image)
+        
+        # Set the icon
+        window.iconphoto(True, icon_photo)
+        
+        # Keep a reference to prevent garbage collection
+        window.icon_photo = icon_photo
+        
+    except Exception as e:
+        # Fallback: try to use a Unicode map emoji in the title
+        print(f"Could not set custom icon: {e}")
+        current_title = window.title()
+        window.title(f"🗺️ {current_title}")
+
 # Create the main GUI window
 root = tk.Tk()
 root.title("Remus Navigation Processor")
 root.geometry("700x500")
+
+# Set window icon to map emoji
+set_map_icon(root)
 
 # Set up variables
 status_var = tk.StringVar()
