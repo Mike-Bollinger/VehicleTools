@@ -149,18 +149,34 @@ def main():
     # Format data fields
     print("\n6. Formatting data fields...")
     try:
-        # Convert time fields to HH:MM format
-        s123_divedata_dbf_reset['Mission Start Time'] = pd.to_datetime(
-            s123_divedata_dbf_reset['Mission Start Time'], format='%H:%M:%S:%f'
-        ).dt.strftime('%H:%M')
+        # Debug: Print data types and sample values before formatting
+        print("  Debug - Data types and sample values:")
+        for col in ['Mission Start Time', 'End Time', 'Dive Date']:
+            print(f"    {col}:")
+            print(f"      Data type: {s123_divedata_dbf_reset[col].dtype}")
+            print(f"      Non-null count: {s123_divedata_dbf_reset[col].notna().sum()}")
+            print(f"      Null count: {s123_divedata_dbf_reset[col].isna().sum()}")
+            print(f"      Sample values: {s123_divedata_dbf_reset[col].dropna().head(3).tolist()}")
+            print(f"      Null values preview: {s123_divedata_dbf_reset[col].isna().head(10).tolist()}")
         
-        s123_divedata_dbf_reset['End Time'] = pd.to_datetime(
-            s123_divedata_dbf_reset['End Time'], format='%H:%M:%S:%f'
-        ).dt.strftime('%H:%M')
+        # Convert time fields to HH:MM format with null handling
+        print("  Processing Mission Start Time...")
+        s123_divedata_dbf_reset['Mission Start Time'] = s123_divedata_dbf_reset['Mission Start Time'].apply(
+            lambda x: pd.to_datetime(x, format='%H:%M:%S:%f', errors='coerce').strftime('%H:%M') 
+            if pd.notna(x) else ''
+        )
         
-        # Format dates
+        print("  Processing End Time...")
+        s123_divedata_dbf_reset['End Time'] = s123_divedata_dbf_reset['End Time'].apply(
+            lambda x: pd.to_datetime(x, format='%H:%M:%S:%f', errors='coerce').strftime('%H:%M') 
+            if pd.notna(x) else ''
+        )
+        
+        # Format dates with null handling
+        print("  Processing Dive Date...")
         s123_divedata_dbf_reset['Dive Date'] = s123_divedata_dbf_reset['Dive Date'].apply(
-            lambda x: datetime.strptime(x, "%m/%d/%Y").strftime("%Y-%m-%d")
+            lambda x: datetime.strptime(x, "%m/%d/%Y").strftime("%Y-%m-%d") 
+            if pd.notna(x) and isinstance(x, str) else ''
         )
         
         # Fix data inconsistencies
@@ -332,11 +348,31 @@ def get_column_id_map(sheet):
 def prepare_smartsheet_rows(data, column_id_map, extra_columns):
     """Function to prepare Smartsheet rows"""
     new_rows = []
-    for _, item in data.iterrows():  # Use iterrows to loop through DataFrame rows
+    
+    # Create reverse mapping for debugging (column_id -> column_name)
+    id_to_column_map = {v: k for k, v in column_id_map.items()}
+    
+    # Print column ID mapping for debugging
+    print("  Debug - Column ID mapping:")
+    for column_name, column_id in column_id_map.items():
+        print(f"    {column_name}: {column_id}")
+    
+    # Check for problematic values in data before creating rows
+    print("  Debug - Checking for potential picklist issues:")
+    for column in data.columns:
+        if column in column_id_map:
+            unique_values = data[column].dropna().unique()
+            print(f"    {column} (ID: {column_id_map[column]}): {len(unique_values)} unique values")
+            print(f"      Values: {list(unique_values)[:10]}{'...' if len(unique_values) > 10 else ''}")
+    
+    for row_idx, item in data.iterrows():  # Use iterrows to loop through DataFrame rows
         row = smartsheet.models.Row()
         row.to_bottom = True
         for column, value in item.items():
             if column in column_id_map and pd.notna(value):  # Check for missing values
+                # Additional debugging for the problematic column ID
+                if column_id_map[column] == 6576620866692996:
+                    print(f"  DEBUG - Row {row_idx}: Column '{column}' (ID: 6576620866692996) = '{value}'")
                 row.cells.append({'column_id': column_id_map[column], 'value': value})
             elif column in column_id_map:
                 row.cells.append({'column_id': column_id_map[column], 'value': ''})  # Use an empty string if NA
@@ -355,6 +391,30 @@ def add_rows_to_smartsheet(client, sheet_id, rows):
         return True
     except smartsheet.exceptions.ApiError as e:
         print(f"✗ Error adding rows to Smartsheet: {e}")
+        
+        # Enhanced error debugging for picklist issues
+        error_str = str(e)
+        if "column" in error_str and "PICKLIST" in error_str:
+            # Try to extract column ID from error message
+            import re
+            column_id_match = re.search(r'column (\d+)', error_str)
+            if column_id_match:
+                error_column_id = int(column_id_match.group(1))
+                print(f"  🔍 Picklist error in column ID: {error_column_id}")
+                
+                # Get sheet to find column name
+                try:
+                    sheet = client.Sheets.get_sheet(sheet_id)
+                    for col in sheet.columns:
+                        if col.id == error_column_id:
+                            print(f"  📋 Column name: '{col.title}'")
+                            print(f"  📝 Column type: {getattr(col, 'type', 'Unknown')}")
+                            if hasattr(col, 'options') and col.options:
+                                print(f"  ✅ Valid picklist options: {[opt.value for opt in col.options]}")
+                            break
+                except Exception as sheet_error:
+                    print(f"  ⚠ Could not retrieve column details: {sheet_error}")
+        
         return False
 
 

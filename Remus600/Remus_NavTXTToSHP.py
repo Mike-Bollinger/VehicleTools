@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 from tkinter.ttk import Progressbar, Scrollbar
 import traceback
 import sys
+import re
 
 # Enable overwrite for ArcPy outputs
 arcpy.env.overwriteOutput = 1
@@ -20,94 +21,95 @@ def process_nav_file(nav_file):
         # Allow user to specify output location instead of assuming parent structure
         main_folder = os.path.dirname(nav_file)
         
-        # Read the navigation file - more robust method
+        # Read the navigation file - use actual headers from file
         try:
             with open(nav_file, 'r') as f:
                 lines = f.readlines()
-                if len(lines) < 2:
-                    raise ValueError(f"File {nav_file} has fewer than 2 lines")
+                if len(lines) < 3:
+                    raise ValueError(f"File {nav_file} has fewer than 3 lines")
                     
-                header_line = lines[1]
-                num_cols = len(header_line.strip().split(','))
+                # First line is column headers, second line is units, data starts at line 3
+                header_line = lines[0].strip()
+                column_names = [col.strip() for col in header_line.split(',')]
                 
-            # Read the file with the correct number of columns
-            all_data = pd.read_csv(nav_file, sep=",", header=0, skiprows=1, names=range(num_cols))
+            # Read the file using actual headers and skip the units line
+            all_data = pd.read_csv(nav_file, sep=",", header=0, skiprows=1, names=column_names)
             
         except Exception as e:
             raise ValueError(f"Error reading file: {str(e)}")
         
-        # Handle different file formats based on column count
-        if num_cols == 14:
-            # If there are 14 columns, use this naming
-            column_names = [
-                "Time", "Date", "LonLat", "Altitude", "Depth_vehicle", "Heading", 
-                "Headingrate", "NeilBrownSoundSpeed", "Pitch", "Pitchrate",
-                "Roll", "Rollrate", "Velocity", "Extra"
-            ]
-        elif num_cols == 13:
-            # If there are 13 columns, use this naming
-            column_names = [
-                "Time", "Date", "LonLat", "Altitude", "Depth_vehicle", "Heading", 
-                "Headingrate", "NeilBrownSoundSpeed", "Pitch", "Pitchrate",
-                "Roll", "Rollrate", "Velocity"
-            ]
-        else:
-            # For any other number of columns, generate generic names
-            column_names = [f"Column_{i}" for i in range(num_cols)]
-            # Ensure we have names for essential columns
-            if num_cols > 2:
-                column_names[0] = "Time"
-                column_names[1] = "Date"
-                column_names[2] = "LonLat"
+        # Print available columns for debugging
+        print(f"Available columns: {list(all_data.columns)}")
         
-        # Assign the appropriate column names
-        all_data.columns = column_names[:num_cols]
+        # Safety check for required columns - find actual column names
+        time_col = None
+        date_col = None
+        lonlat_col = None
         
-        # Safety check for required columns
-        required_columns = ["Time", "Date", "LonLat"]
-        for col in required_columns:
-            if col not in all_data.columns:
-                raise ValueError(f"Required column '{col}' not found in data")
+        # Find Time column (look for variations)
+        for col in all_data.columns:
+            if 'time' in col.lower():
+                time_col = col
+                break
+        
+        # Find Date column  
+        for col in all_data.columns:
+            if 'date' in col.lower():
+                date_col = col
+                break
+                
+        # Find LonLat column
+        for col in all_data.columns:
+            if 'lon' in col.lower() and 'lat' in col.lower():
+                lonlat_col = col
+                break
+        
+        if not time_col:
+            raise ValueError("Could not find Time column in data")
+        if not date_col:
+            raise ValueError("Could not find Date column in data") 
+        if not lonlat_col:
+            raise ValueError("Could not find Lon/Lat column in data")
+            
+        print(f"Using columns - Time: '{time_col}', Date: '{date_col}', LonLat: '{lonlat_col}'")
         
         # Trim whitespace from columns
-        all_data["Time"] = all_data["Time"].str.strip()
-        all_data["Date"] = all_data["Date"].str.strip()
+        all_data[time_col] = all_data[time_col].str.strip()
+        all_data[date_col] = all_data[date_col].str.strip()
         
         # Convert Date to datetime format
-        all_data["Date_mod"] = pd.to_datetime(all_data["Date"], format="%m/%d/%Y")
+        all_data["Date_mod"] = pd.to_datetime(all_data[date_col], format="%m/%d/%Y")
         
         # Pad Time with leading zero if needed
-        all_data["time_mod"] = all_data["Time"].apply(lambda t: t if len(t.strip()) == 12 else f"0{t.strip()}")
+        all_data["time_mod"] = all_data[time_col].apply(lambda t: t if len(t.strip()) == 12 else f"0{t.strip()}")
         
-        # Create combined timestamp column
+        # Create combined timestamp column (assuming UTC timezone)
         all_data["Tmstamp"] = all_data["Date_mod"].astype(str) + " " + all_data["time_mod"]
-        all_data["Tmstamp2"] = pd.to_datetime(all_data["Tmstamp"], format="%Y-%m-%d %H:%M:%S.%f")
+        all_data["Tmstamp2"] = pd.to_datetime(all_data["Tmstamp"], format="%Y-%m-%d %H:%M:%S.%f", utc=True)
+        
+        # Convert to epoch time (Unix timestamp)
+        all_data["mission_time"] = all_data["Tmstamp2"].astype('int64') // 10**9
         
         # Sort by timestamp
         all_data = all_data.sort_values(by="Tmstamp2")
         
         # Split LonLat into Latitude and Longitude with robust handling of leading whitespace
         try:
-            # First, check if LonLat column exists
-            if "LonLat" not in all_data.columns:
-                raise ValueError("LonLat column not found in the data")
-                
             # Print sample of LonLat data for debugging
-            print(f"Sample LonLat format: '{all_data['LonLat'].iloc[0]}'")
+            print(f"Sample LonLat format: '{all_data[lonlat_col].iloc[0]}'")
             
             # Strip leading and trailing whitespace first
-            all_data["LonLat"] = all_data["LonLat"].str.strip()
+            all_data[lonlat_col] = all_data[lonlat_col].str.strip()
             
             # Try different splitting methods
             # Method 1: Split by multiple spaces (2 or more)
-            lat_lon_split = all_data["LonLat"].str.split(r'\s{2,}', expand=True)
+            lat_lon_split = all_data[lonlat_col].str.split(r'\s{2,}', expand=True)
             
             if len(lat_lon_split.columns) >= 2:
                 all_data["Latitude"] = lat_lon_split[0]
                 all_data["Longitude"] = lat_lon_split[1]
             else:
                 # Method 2: Use regex to find the specific coordinate patterns
-                import re
                 
                 def extract_coords(lonlat_str):
                     if pd.isna(lonlat_str) or not lonlat_str.strip():
@@ -128,7 +130,7 @@ def process_nav_file(nav_file):
                     return None, None
                 
                 # Apply extraction function to each row
-                extracted = all_data["LonLat"].apply(extract_coords)
+                extracted = all_data[lonlat_col].apply(extract_coords)
                 all_data["Latitude"] = extracted.str[0]
                 all_data["Longitude"] = extracted.str[1]
             
@@ -207,51 +209,81 @@ def process_nav_file(nav_file):
             print(error_msg)
             raise ValueError(error_msg)
         
-        # Select relevant columns (make sure they exist in the dataframe)
-        columns_to_select = []
-        for col in ["Date_mod", "time_mod", "Tmstamp2", "Latitude_dd", "Longitude_dd", 
-                    "Altitude", "Depth_vehicle", "Heading", "Headingrate",
-                    "Pitch", "Pitchrate", "Roll", "Rollrate", "Velocity"]:
-            if col in all_data.columns:
-                columns_to_select.append(col)
-            elif col == "Depth_vehicle" and "Bathymetry" in all_data.columns:
-                # Handle different column names for depth
-                columns_to_select.append("Bathymetry")
+        # Find actual column names in the data for MSN005 format
+        # Required: mission_time, heading, latitude, longitude, depth, heading_rate, altitude
         
-        # Make sure we have the minimum required columns
-        min_required = ["Latitude_dd", "Longitude_dd"]
-        for col in min_required:
-            if col not in columns_to_select:
-                raise ValueError(f"Required column '{col}' not available for processing")
+        # Find heading column
+        heading_col = None
+        for col in all_data.columns:
+            if col.lower() == 'heading' and 'rate' not in col.lower():
+                heading_col = col
+                break
         
-        all_data = all_data[columns_to_select]
+        # Find heading rate column  
+        heading_rate_col = None
+        for col in all_data.columns:
+            if 'heading' in col.lower() and 'rate' in col.lower():
+                heading_rate_col = col
+                break
+                
+        # Find depth column (could be Depth of vehicle, Bathymetry, etc.)
+        depth_col = None
+        for col in all_data.columns:
+            if ('depth' in col.lower() and 'vehicle' in col.lower()) or 'bathymetry' in col.lower():
+                depth_col = col
+                break
+                
+        # Find altitude column
+        altitude_col = None
+        for col in all_data.columns:
+            if 'altitude' in col.lower():
+                altitude_col = col
+                break
         
-        # Create standardized column names
-        new_columns = {
-            "Date_mod": "date",
-            "time_mod": "time",
-            "Tmstamp2": "timestamp",
-            "Latitude_dd": "latitude",
-            "Longitude_dd": "longitude",
-            "Altitude": "altitude",
-            "Depth_vehicle": "depth",
-            "Bathymetry": "depth",
-            "Heading": "heading",
-            "Headingrate": "heading_rate",
-            "Pitch": "pitch", 
-            "Pitchrate": "pitch_rate",
-            "Roll": "roll",
-            "Rollrate": "roll_rate",
-            "Velocity": "velocity"
-        }
+        # Create the MSN005 format dataframe with required columns
+        output_data = pd.DataFrame()
         
-        # Rename only columns that exist
-        rename_dict = {old: new for old, new in new_columns.items() if old in all_data.columns}
-        all_data = all_data.rename(columns=rename_dict)
+        # mission_time (epoch time in UTC) - already created
+        output_data['mission_time'] = all_data['mission_time']
         
-        # Adjust heading_rate if it exists
-        if "heading_rate" in all_data.columns:
-            all_data["heading_rate"] *= -1
+        # heading - use found heading column or set to 0 if not found
+        if heading_col and heading_col in all_data.columns:
+            output_data['heading'] = pd.to_numeric(all_data[heading_col], errors='coerce')
+        else:
+            print("Warning: Heading column not found, setting to 0")
+            output_data['heading'] = 0.0
+        
+        # latitude and longitude - already converted to decimal degrees
+        output_data['latitude'] = all_data['Latitude_dd']
+        output_data['longitude'] = all_data['Longitude_dd']
+        
+        # depth - use found depth column or set to 0 if not found  
+        if depth_col and depth_col in all_data.columns:
+            output_data['depth'] = pd.to_numeric(all_data[depth_col], errors='coerce')
+        else:
+            print("Warning: Depth column not found, setting to 0")
+            output_data['depth'] = 0.0
+        
+        # heading_rate - use found heading rate column or set to 0 if not found
+        if heading_rate_col and heading_rate_col in all_data.columns:
+            # Adjust heading_rate (multiply by -1 as in original code)
+            output_data['heading_rate'] = pd.to_numeric(all_data[heading_rate_col], errors='coerce') * -1
+        else:
+            print("Warning: Heading rate column not found, setting to 0")
+            output_data['heading_rate'] = 0.0
+            
+        # altitude - use found altitude column or set to 0 if not found
+        if altitude_col and altitude_col in all_data.columns:
+            output_data['altitude'] = pd.to_numeric(all_data[altitude_col], errors='coerce')
+        else:
+            print("Warning: Altitude column not found, setting to 0")
+            output_data['altitude'] = 0.0
+        
+        # Remove rows with invalid coordinates
+        output_data = output_data.dropna(subset=['latitude', 'longitude'])
+        
+        # Use the output_data for both CSV and shapefile creation
+        all_data = output_data
         
         return all_data, dive_num, main_folder
         
