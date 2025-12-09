@@ -451,16 +451,31 @@ def create_shapefile(coord_data, dive_num, output_folder):
             )
         except Exception as e:
             print(f"  Warning: Could not calculate geodesic length: {str(e)}")
-            print(f"  Attempting planar length calculation instead...")
+            print(f"  Calculating length manually using geodesic distance...")
             try:
-                # Try planar length as fallback
-                arcpy.CalculateGeometryAttributes_management(
-                    dissolved_shpfile,
-                    [["Length_m", "LENGTH"]],
-                    "METERS"
-                )
+                # Calculate length manually by summing geodesic distances between vertices
+                with arcpy.da.UpdateCursor(dissolved_shpfile, ["SHAPE@", "Length_m"]) as cursor:
+                    for row in cursor:
+                        geom = row[0]
+                        if geom:
+                            total_length = 0
+                            for part in geom:
+                                points = list(part)
+                                for i in range(len(points) - 1):
+                                    p1 = points[i]
+                                    p2 = points[i + 1]
+                                    if p1 and p2:
+                                        # Create point geometries with spatial reference
+                                        pt1 = arcpy.PointGeometry(arcpy.Point(p1.X, p1.Y), spatRef)
+                                        pt2 = arcpy.PointGeometry(arcpy.Point(p2.X, p2.Y), spatRef)
+                                        # Calculate geodesic distance
+                                        segment_length = pt1.distanceTo(pt2)
+                                        total_length += segment_length
+                            row[1] = total_length
+                            cursor.updateRow(row)
+                print(f"  Manual length calculation successful")
             except Exception as e2:
-                print(f"  Warning: Could not calculate length: {str(e2)}")
+                print(f"  Warning: Could not calculate length manually: {str(e2)}")
                 # Leave Length_m as NULL rather than failing
         
         print(f"  Shapefile created: {dissolved_shpfile}")
