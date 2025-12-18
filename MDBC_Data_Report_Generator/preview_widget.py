@@ -1,0 +1,275 @@
+"""
+Preview Widget Module
+Creates an 8.5x11" preview canvas for QAQC of dive reports
+"""
+
+import tkinter as tk
+from tkinter import ttk
+from PIL import Image, ImageTk
+import os
+from typing import Dict, List, Optional
+
+
+class PreviewWidget(ttk.Frame):
+    """
+    Preview pane that shows a dive report page at 8.5x11" proportions
+    """
+    
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, **kwargs)
+        
+        # 8.5 x 11 inch aspect ratio
+        self.page_width = 850  # pixels (scaled down)
+        self.page_height = 1100  # pixels (scaled down)
+        self.dpi_scale = 100  # 100 pixels per inch for display
+        
+        self.current_dive = None
+        self.current_metadata = None
+        self.current_images = []
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """Setup the preview UI"""
+        # Title
+        title_frame = ttk.Frame(self)
+        title_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(title_frame, text="Preview (First Dive)", 
+                 font=("Arial", 12, "bold")).pack(side=tk.LEFT)
+        
+        self.dive_label = ttk.Label(title_frame, text="No dive selected", 
+                                    font=("Arial", 10))
+        self.dive_label.pack(side=tk.LEFT, padx=10)
+        
+        # Canvas frame with scrollbar
+        canvas_frame = ttk.Frame(self)
+        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Canvas with white background (paper)
+        self.canvas = tk.Canvas(canvas_frame, 
+                               width=self.page_width,
+                               height=self.page_height,
+                               bg='white',
+                               yscrollcommand=scrollbar.set,
+                               highlightthickness=1,
+                               highlightbackground='gray')
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        scrollbar.config(command=self.canvas.yview)
+        
+        # Configure scrollregion
+        self.canvas.configure(scrollregion=(0, 0, self.page_width, self.page_height * 3))
+        
+    def load_dive_preview(self, dive_info: Dict, metadata: Dict, images: List[str]):
+        """
+        Load a dive preview
+        
+        Args:
+            dive_info: Dict with dive_name, dive_number, etc.
+            metadata: Dict with dive metadata (date, vehicle, duration, etc.)
+            images: List of image paths to display
+        """
+        self.current_dive = dive_info
+        self.current_metadata = metadata
+        self.current_images = images
+        
+        # Update title
+        self.dive_label.config(text=f"{dive_info['dive_name']} - {len(images)} images")
+        
+        # Clear canvas
+        self.canvas.delete("all")
+        
+        # Render preview
+        self._render_preview()
+        
+    def _render_preview(self):
+        """Render the dive report preview on canvas"""
+        if not self.current_dive or not self.current_metadata:
+            self.canvas.create_text(self.page_width // 2, 100,
+                                   text="No dive selected for preview",
+                                   font=("Arial", 14),
+                                   fill='gray')
+            return
+            
+        y_pos = 20
+        margin = 40
+        content_width = self.page_width - (2 * margin)
+        
+        # Title - use CSV dive number if available
+        dive_name = self.current_dive['dive_name']
+        csv_dive_number = self.current_metadata.get('Dive Number', dive_name)
+        dive_date = self.current_metadata.get('Date', 'Date TBD')
+        title_text = f"{csv_dive_number} - {dive_date}"
+        
+        self.canvas.create_text(self.page_width // 2, y_pos,
+                               text=title_text,
+                               font=("Arial", 16, "bold"),
+                               anchor=tk.N)
+        y_pos += 40
+        
+        # Metadata section
+        metadata_items = [
+            ('Vehicle', self.current_metadata.get('Vehicle', 'N/A')),
+            ('Operations Area', self.current_metadata.get('Operations Area', 'N/A')),
+            ('Survey Box', self.current_metadata.get('Survey Box', 'N/A')),
+            ('Dive Type', self.current_metadata.get('Dive Type', 'N/A')),
+            ('Start Time', self.current_metadata.get('Start Time', 'N/A')),
+            ('End Time', self.current_metadata.get('End Time', 'N/A')),
+            ('Start Location', self.current_metadata.get('Start Location', 'N/A')),
+            ('Total Duration', self.current_metadata.get('Total Duration', 'N/A')),
+            ('Linear Distance', self.current_metadata.get('Linear Distance Covered', 'N/A')),
+        ]
+        
+        for label, value in metadata_items:
+            text = f"{label}: {value}"
+            self.canvas.create_text(margin, y_pos,
+                                   text=text,
+                                   font=("Arial", 9),
+                                   anchor=tk.W)
+            y_pos += 18
+        
+        # Narrative
+        narrative = self.current_metadata.get('Dive Narrative', 'N/A')
+        self.canvas.create_text(margin, y_pos,
+                               text="Dive Narrative:",
+                               font=("Arial", 9, "bold"),
+                               anchor=tk.W)
+        y_pos += 18
+        
+        # Wrap narrative text
+        narrative_lines = self._wrap_text(str(narrative), content_width - 20, ("Arial", 9))
+        for line in narrative_lines:
+            self.canvas.create_text(margin + 10, y_pos,
+                                   text=line,
+                                   font=("Arial", 9),
+                                   anchor=tk.W)
+            y_pos += 16
+        
+        y_pos += 20
+        
+        # Images section
+        if not self.current_images:
+            self.canvas.create_text(self.page_width // 2, y_pos,
+                                   text="No images found in Report_Plots",
+                                   font=("Arial", 10, "italic"),
+                                   fill='gray')
+            y_pos += 30
+        else:
+            # Show up to 3 preview images
+            preview_count = min(3, len(self.current_images))
+            
+            for i in range(preview_count):
+                img_path = self.current_images[i]
+                
+                # Add section header if first image in category
+                if i == 0:
+                    self.canvas.create_text(margin, y_pos,
+                                           text="Vehicle Data Summary",
+                                           font=("Arial", 11, "bold"),
+                                           anchor=tk.W)
+                    y_pos += 25
+                
+                # Try to load and display image
+                try:
+                    img = Image.open(img_path)
+                    
+                    # Scale to fit width
+                    max_width = content_width
+                    max_height = 400
+                    
+                    img_ratio = img.width / img.height
+                    target_width = min(max_width, img.width)
+                    target_height = int(target_width / img_ratio)
+                    
+                    if target_height > max_height:
+                        target_height = max_height
+                        target_width = int(target_height * img_ratio)
+                    
+                    img_resized = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                    photo = ImageTk.PhotoImage(img_resized)
+                    
+                    # Keep reference to avoid garbage collection
+                    if not hasattr(self, 'image_refs'):
+                        self.image_refs = []
+                    self.image_refs.append(photo)
+                    
+                    # Center image
+                    x_pos = self.page_width // 2
+                    self.canvas.create_image(x_pos, y_pos + target_height // 2,
+                                            image=photo,
+                                            anchor=tk.N)
+                    y_pos += target_height + 10
+                    
+                    # Caption
+                    caption = f"Figure {i+1}. {os.path.basename(img_path)}"
+                    caption_lines = self._wrap_text(caption, content_width, ("Arial", 8))
+                    for line in caption_lines:
+                        self.canvas.create_text(self.page_width // 2, y_pos,
+                                               text=line,
+                                               font=("Arial", 8, "italic"),
+                                               anchor=tk.N)
+                        y_pos += 14
+                    
+                    y_pos += 20
+                    
+                except Exception as e:
+                    # Show error message with details
+                    error_text = f"[Error loading {os.path.basename(img_path)}: {str(e)[:50]}]"
+                    self.canvas.create_text(self.page_width // 2, y_pos,
+                                           text=error_text,
+                                           font=("Arial", 8, "italic"),
+                                           fill='red',
+                                           width=content_width)
+                    y_pos += 40
+                    print(f"Preview error for {img_path}: {e}")
+            
+            # Show remaining image count
+            if len(self.current_images) > preview_count:
+                remaining = len(self.current_images) - preview_count
+                self.canvas.create_text(self.page_width // 2, y_pos,
+                                       text=f"... and {remaining} more images",
+                                       font=("Arial", 10, "italic"),
+                                       fill='gray')
+                y_pos += 30
+        
+        # Update scroll region to fit content
+        self.canvas.configure(scrollregion=(0, 0, self.page_width, y_pos + 50))
+        
+    def _wrap_text(self, text: str, max_width: int, font: tuple) -> List[str]:
+        """Wrap text to fit within max_width"""
+        # Simple word wrapping
+        words = text.split()
+        lines = []
+        current_line = []
+        
+        # Estimate character width (rough approximation)
+        char_width = 7 if font[1] == 9 else 6
+        max_chars = max_width // char_width
+        
+        for word in words:
+            if len(' '.join(current_line + [word])) <= max_chars:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                current_line = [word]
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+            
+        return lines if lines else [text]
+    
+    def clear_preview(self):
+        """Clear the preview canvas"""
+        self.canvas.delete("all")
+        self.dive_label.config(text="No dive selected")
+        self.current_dive = None
+        self.current_metadata = None
+        self.current_images = []
+        if hasattr(self, 'image_refs'):
+            self.image_refs.clear()
