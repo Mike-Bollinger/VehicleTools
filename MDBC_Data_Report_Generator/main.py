@@ -7,8 +7,8 @@ Enhanced version with:
 - Smart dive number matching
 - Checkbox selection interface
 
-Author: Enhanced by GitHub Copilot
-Date: December 2025
+Author: Mike Bollinger, Enhanced by GitHub Copilot
+Updated Date: January 2026
 """
 
 import sys

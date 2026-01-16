@@ -6,7 +6,7 @@ Handles creation of Word documents from dive data
 import os
 import pandas as pd
 from docx import Document
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from datetime import datetime
 from typing import Dict, List, Optional, Callable
@@ -187,6 +187,28 @@ class ReportGenerator:
         """Create a new Word document with title"""
         doc = Document()
         
+        # Configure document styles
+        # Normal style - Calibri 11pt Black
+        normal_style = doc.styles['Normal']
+        normal_font = normal_style.font
+        normal_font.name = 'Calibri'
+        normal_font.size = Pt(11)
+        normal_font.color.rgb = RGBColor(0, 0, 0)  # Black
+        
+        # Heading 1 - Arial 18pt Black
+        heading1_style = doc.styles['Heading 1']
+        heading1_font = heading1_style.font
+        heading1_font.name = 'Arial'
+        heading1_font.size = Pt(18)
+        heading1_font.color.rgb = RGBColor(0, 0, 0)  # Black
+        
+        # Heading 2 - Arial 14pt Black
+        heading2_style = doc.styles['Heading 2']
+        heading2_font = heading2_style.font
+        heading2_font.name = 'Arial'
+        heading2_font.size = Pt(14)
+        heading2_font.color.rgb = RGBColor(0, 0, 0)  # Black
+        
         title_para = doc.add_heading('Appendix A: Dive Post-Mission Analysis', level=1)
         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
@@ -200,7 +222,8 @@ class ReportGenerator:
     
     def add_dive_section(self, doc: Document, dive_info: Dict, metadata: Dict, 
                         images: List[str], categorized_images: Dict[str, List[str]] = None,
-                        progress_callback: Optional[Callable] = None):
+                        progress_callback: Optional[Callable] = None,
+                        map_folder: str = ""):
         """
         Add a complete dive section to the document
         
@@ -211,6 +234,7 @@ class ReportGenerator:
             images: List of all image paths
             categorized_images: Optional dict with categorized images (deprecated)
             progress_callback: Optional callback for progress updates
+            map_folder: Optional path to folder containing dive maps
         """
         dive_name = dive_info['dive_name']  # Folder name (for file matching)
         dive_number = dive_info['dive_number'].lstrip('0') or '0'
@@ -227,6 +251,11 @@ class ReportGenerator:
         # Metadata
         self._add_metadata_section(doc, metadata)
         
+        # Add map after dive narrative (if available)
+        if map_folder:
+            self._add_dive_map(doc, csv_dive_number, dive_number, 
+                              map_folder, progress_callback)
+        
         # Build file index for quick lookup
         all_files = {}
         report_plots_path = dive_info.get('report_plots_path', '')
@@ -242,6 +271,7 @@ class ReportGenerator:
         # Add content in specific order with metrics
         if all_files:
             # Pass both folder name (for file matching) and CSV dive number (for captions)
+            # Figure numbering starts at 2 since map is Figure A#.1
             self._add_ordered_content(doc, dive_name, csv_dive_number, dive_number, 
                                      report_plots_path, all_files, progress_callback)
         
@@ -276,6 +306,72 @@ class ReportGenerator:
         narrative_para.add_run(str(narrative) if not pd.isna(narrative) and narrative != '' and narrative != 'N/A' else 'N/A')
         narrative_para.paragraph_format.space_after = Pt(0)
         narrative_para.paragraph_format.line_spacing = 1.0
+    
+    def _add_dive_map(self, doc: Document, csv_dive_number: str, 
+                     dive_number: str, map_folder: str, progress_callback: Optional[Callable] = None):
+        """
+        Add dive map image after the dive narrative section
+        
+        Args:
+            doc: Document object
+            csv_dive_number: Dive number from CSV (e.g., DIVE021)
+            dive_number: Numeric dive number for figure numbering (e.g., 21)
+            map_folder: Path to folder containing dive maps
+            progress_callback: Optional callback for progress updates
+        """
+        if not map_folder or not os.path.exists(map_folder):
+            return
+        
+        # Extract dive number from csv_dive_number (e.g., DIVE021 -> 021)
+        dive_num_part = csv_dive_number.upper().replace('DIVE', '').strip()
+        
+        # Build expected map filename pattern: DIVE###_map (mission agnostic)
+        map_filename_pattern = f"DIVE{dive_num_part}_map"
+        
+        # Search for map file (may have different extensions)
+        map_file = None
+        for file in os.listdir(map_folder):
+            # Check if filename contains the dive pattern
+            if map_filename_pattern.lower() in file.lower():
+                # Check if it's an image file
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')):
+                    map_file = os.path.join(map_folder, file)
+                    break
+        
+        if not map_file:
+            if progress_callback:
+                progress_callback(f"  Warning: Map not found for {csv_dive_number} in {map_folder}")
+            return
+        
+        try:
+            # Add space before map
+            doc.add_paragraph()
+            
+            # Add map image
+            doc.add_picture(map_file, width=Inches(6.0))
+            
+            # Add caption
+            caption_text = (f"Figure A{dive_number}.1. Map of the AUV path for {csv_dive_number}. "
+                          f"The trackline of the AUV is shown in a thin black line. Altitude for "
+                          f"acquired images is shown by color indicating too low (<4) in yellow, "
+                          f"optimal altitude in orange, and too high (>8m) in violet. The start and "
+                          f"end of the trackline are labeled, and predefined ground truthing points "
+                          f"are shown as standalone green circles.")
+            
+            caption_para = doc.add_paragraph()
+            caption_para.add_run(caption_text).italic = True
+            caption_para.paragraph_format.space_after = Pt(12)
+            
+            # Add space after caption
+            doc.add_paragraph()
+            
+            if progress_callback:
+                progress_callback(f"  Added map for {csv_dive_number}")
+                
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f"  Error adding map for {csv_dive_number}: {e}")
+            print(f"Error adding map {map_file}: {e}")
     
     def _add_metrics_table(self, doc: Document, metrics_path: str, title: str):
         """Add metrics from text file as a compact formatted table"""
@@ -320,7 +416,8 @@ class ReportGenerator:
         dive_number: numeric dive number for figure numbering (e.g., '21')
         all_files: dict mapping normalized filename to full path
         """
-        figure_counter = 1
+        # Start at 2 since map is Figure A#.1
+        figure_counter = 2
         
         # Define the exact order of content
         ordered_items = [
@@ -460,7 +557,8 @@ class ReportGenerator:
         return None
     
     def generate_report(self, selected_dives: List[Dict], metadata_dict: Dict[str, Dict],
-                       output_path: str, progress_callback: Optional[Callable] = None) -> bool:
+                       output_path: str, progress_callback: Optional[Callable] = None,
+                       map_folder: str = "") -> bool:
         """
         Generate complete report for selected dives
         
@@ -469,6 +567,7 @@ class ReportGenerator:
             metadata_dict: Dict mapping dive names to metadata
             output_path: Full path for output file
             progress_callback: Optional callback for progress updates
+            map_folder: Optional path to folder containing dive maps
             
         Returns:
             True if successful, False otherwise
@@ -514,11 +613,13 @@ class ReportGenerator:
                     images = finder.get_images_from_report_plots(dive_info['report_plots_path'])
                     categorized = finder.categorize_images(images)
                     
-                    self.add_dive_section(doc, dive_info, metadata, images, categorized, progress_callback)
+                    self.add_dive_section(doc, dive_info, metadata, images, categorized, 
+                                        progress_callback, map_folder)
                 else:
                     if progress_callback:
                         progress_callback(f"  Warning: No Report_Plots folder for {dive_info['dive_name']}")
-                    self.add_dive_section(doc, dive_info, metadata, [], None, progress_callback)
+                    self.add_dive_section(doc, dive_info, metadata, [], None, 
+                                        progress_callback, map_folder)
             
             # Save document
             doc.save(output_path)

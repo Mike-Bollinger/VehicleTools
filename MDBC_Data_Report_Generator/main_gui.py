@@ -225,6 +225,7 @@ class MainGUI:
         self.report_generator = ReportGenerator()
         
         self.csv_file_var = tk.StringVar(value="C:\\Users\\Mike.Bollinger\\Downloads\\EN2501_AUV_Mission_Log_IMAGING_LASER - Mission_Overview.csv")
+        self.map_folder_var = tk.StringVar(value="")
         self.output_folder_var = tk.StringVar(value=os.path.dirname(__file__))
         
         self.metadata_cache = {}
@@ -271,6 +272,16 @@ class MainGUI:
         ttk.Entry(csv_entry_frame, textvariable=self.csv_file_var).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         ttk.Button(csv_entry_frame, text="Browse", command=self.browse_csv).pack(side=tk.LEFT)
         ttk.Button(csv_entry_frame, text="Load", command=self.load_metadata).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Map Folder section (optional)
+        map_frame = ttk.LabelFrame(parent, text="Dive Maps Folder (Optional)", padding=10)
+        map_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        map_entry_frame = ttk.Frame(map_frame)
+        map_entry_frame.pack(fill=tk.X)
+        
+        ttk.Entry(map_entry_frame, textvariable=self.map_folder_var).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        ttk.Button(map_entry_frame, text="Browse", command=self.browse_map_folder).pack(side=tk.LEFT)
         
         # Data Sources section
         sources_frame = ttk.LabelFrame(parent, text="Data Sources", padding=10)
@@ -334,6 +345,15 @@ class MainGUI:
         if file:
             self.csv_file_var.set(file)
             self.load_metadata()
+    
+    def browse_map_folder(self):
+        """Browse for map folder"""
+        folder = filedialog.askdirectory(
+            title="Select Dive Maps Folder",
+            initialdir=self.map_folder_var.get() if self.map_folder_var.get() else os.path.dirname(__file__)
+        )
+        if folder:
+            self.map_folder_var.set(folder)
             
     def browse_output(self):
         """Browse for output folder"""
@@ -467,16 +487,22 @@ class MainGUI:
             progress_text.see(tk.END)
             progress_window.update_idletasks()
         
+        # Get map folder (optional)
+        map_folder = self.map_folder_var.get().strip()
+        
         try:
             log_progress(f"Generating report for {len(selected)} dives...")
             log_progress(f"Output: {output_path}")
+            if map_folder:
+                log_progress(f"Map folder: {map_folder}")
             log_progress("-" * 50)
             
             success = self.report_generator.generate_report(
                 selected, 
                 self.metadata_cache, 
                 output_path, 
-                log_progress
+                log_progress,
+                map_folder=map_folder
             )
             
             if success:
