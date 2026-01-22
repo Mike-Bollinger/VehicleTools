@@ -166,8 +166,12 @@ DataSource/
 ├── DIVE001/
 │   ├── Report_Plots/
 │   │   ├── DIVE001_map.png
-│   │   ├── altitude_histogram.png
-│   │   ├── lls_processing_3cnjkhft_AUV_Position.png
+│   │   ├── DIVE001_Image_Altitude_Histogram.png
+│   │   ├── DIVE001_LLS_AUV_Position.png
+│   │   ├── DIVE001_LLS_AUV_Dive_Profile.png
+│   │   └── ...
+│   ├── products/
+│   │   ├── lls_stats.txt  (optional, for LLS statistics table)
 │   │   └── ...
 │   └── [other dive data]
 ├── DIVE002/
@@ -186,6 +190,36 @@ Expected columns (first row skipped, second row as headers):
 - `Duration`: Mission duration
 - `Actual`: Linear distance covered
 - `Dive Narrative`: Mission description
+
+### LLS Statistics File (Optional)
+
+For dives with laser scan data, the system will automatically look for a QuickLook Summary file (e.g., `DIVE004_LLS_Voyis_QuickLook_Summary.txt`) in these locations:
+- `products/Report_Plots/`
+- `products/`
+- `Report_Plots/`
+- Root dive folder
+
+The file should contain statistics in "Key: Value" format. The following fields will be extracted:
+- `Number of files` → Raw XYZ LLS Files
+- `Total size of files` → Raw XYZ Total File Size (converted from MB to GB)
+- `Total Points Processed` → Total Points Collected
+- `Percent of Good Points (DEPTH_FLAG=1)` → Percent Of Scans On Bottom
+
+This data will be displayed in a table at the beginning of the Laser Analysis Summary section. If the file is not found, default "N/A" values will be used.
+
+### Image Overlap Statistics Files (Optional)
+
+For dives with image overlap analysis, the system will automatically look for these summary files:
+- `*_Image_Overall_Overlap_Summary.txt`
+- `*_Image_Vertical_Overlap_Summary.txt`
+- `*_Image_Horizontal_Overlap_Summary.txt`
+
+These files should contain statistics in plain text format. Key metrics will be extracted and displayed in a table at the beginning of the Imaging Summary section:
+- Overall: Total Pairs Checked, Total Overlapping Pairs, Average Overlap Count per Image
+- Sequential (Vertical): Total Overlapping Pairs, Average Overlap
+- Non-sequential (Horizontal): Total Pairs Checked, Total Overlapping Pairs, Average Overlap
+
+If the files are not found, default "N/A" values will be used.
 
 ## Troubleshooting
 

@@ -19,7 +19,7 @@ class DiveReportGenerator:
         # Use {dive_name} and {dive_number} as placeholders
         self.caption_mapping = {
             # Navigation and Track plots
-            '{dive_name}_map': 'Map of the AUV path for {dive_name}. Map of the AUV path for DIVE003. The trackline of the AUV is shown in a thin black line. Altitude for acquired images is shown by color indicating too low (<4) in yellow, optimal altitude in orange, and too high (>8m) in violet. The start and end of the trackline are labeled, and predefined ground truthing points are shown as standalone green circles.',
+            '{dive_name}_map': 'Map of the AUV path for {dive_name}. The trackline of the AUV is shown in a thin black line. Altitude for acquired images is shown by color indicating too low (<4) in yellow, optimal altitude in orange, and too high (>8m) in violet. The start and end of the trackline are labeled, and predefined ground truthing points are shown as standalone green circles.',
             
             
             #Vehicle statistics
@@ -40,13 +40,14 @@ class DiveReportGenerator:
             'visibility_analysis': 'Results from the visibility analysis for {dive_name}. Example images are what the model considered the best example from each category.',
             
             # LLS Data from Voyis
-            'lls_processing_3cnjkhft_AUV_Dive_Profile': 'Plot showing AUV dive profile in Blue, seafloor in black, and overlaid good and bad data from the laser scan based on agreement between AUV echo sounder and laser scan depth measurements. ',
-            'lls_processing_3cnjkhft_AUV_Position': 'AUV track and laser scan coverage where green denotes good laser scan data reaching the seafloor, and red areas are where the laser scan did not reach the seafloor.',
-            'lls_processing_3cnjkhft_AUV_Depth_vs_Intensity': 'Laser intensity values for scans that reach the seafloor, shown as a histogram and as intensity vs depth.',
-            'lls_processing_3cnjkhft_AUV_Position_Depth_Color': 'Map of good data colored based on water depth. The black line shows the complete AUV track.',    
-            'lls_processing_3cnjkhft_AUV_Position_Depth_Deviation_Color': 'Map showing bottom deviations from a spatially averaged depth across 5m. Red positive values indicate emergent objects such as boulders and reefs, '
+            'lls_auv_dive_profile': 'Plot showing AUV dive profile in Blue, seafloor in black, and overlaid good and bad data from the laser scan based on agreement between AUV echo sounder and laser scan depth measurements. ',
+            'lls_auv_position': 'AUV track and laser scan coverage where green denotes good laser scan data reaching the seafloor, and red areas are where the laser scan did not reach the seafloor.',
+            'lls_auv_depth_vs_intensity': 'Laser intensity values for scans that reach the seafloor, shown as a histogram and as intensity vs depth.',
+            'lls_auv_depth_histogram': 'Histogram showing the distribution of AUV depths during laser scan data collection.',
+            'lls_auv_position_depth_color': 'Map of good data colored based on water depth. The black line shows the complete AUV track.',    
+            'lls_auv_position_depth_deviation_color': 'Map showing bottom deviations from a spatially averaged depth across 5m. Red positive values indicate emergent objects such as boulders and reefs, '
                 'and blue negative values indicate dropoffs or low points in the seafloor. The black line shows the complete AUV track.',
-            'lls_processing_3cnjkhft_AUV_Position_Intensity_Color': 'Map showing the return laser reflectance intensity for good data. Large values are associated with strong returns in good water clarity, '
+            'lls_auv_position_intensity_color': 'Map showing the return laser reflectance intensity for good data. Large values are associated with strong returns in good water clarity, '
                 ' or objects with high reflectance such as hard bottom and low values indicate poor visibility or low reflectance from the seafloor. The black line shows the complete AUV track.',
             
             # Default fallback
@@ -253,9 +254,9 @@ class DiveReportGenerator:
                     ]):
                         imaging_images.append((image_path, caption_text))
                     elif any(key in filename.replace('_', '').replace('-', '') for key in [
-                        'llsprocessing3cnjkhftauvdiveprofile', 'llsprocessing3cnjkhftauvposition',
-                        'llsprocessing3cnjkhftauvdepthvsintensity', 'llsprocessing3cnjkhftauvpositiondepthcolor',
-                        'llsprocessing3cnjkhftauvpositiondepthdeviationcolor', 'llsprocessing3cnjkhftauvpositionintensitycolor'
+                        'llsauvdiveprofile', 'llsauvposition',
+                        'llsauvdepthvsintensity', 'llsauvdepthhistogram', 'llsauvpositiondepthcolor',
+                        'llsauvpositiondepthdeviationcolor', 'llsauvpositionintensitycolor'
                     ]):
                         laser_images.append((image_path, caption_text))
             
@@ -292,6 +293,10 @@ class DiveReportGenerator:
                 doc.add_paragraph()  # Add space
                 imaging_heading = doc.add_heading('Imaging Summary', level=3)
                 
+                # Add image overlap statistics table as first item
+                dive_folder = dive_info['path']
+                self.add_image_overlap_table(doc, dive_folder)
+                
                 for image_path, caption_text in imaging_images:
                     try:
                         doc.add_picture(image_path, width=Inches(6))
@@ -311,6 +316,10 @@ class DiveReportGenerator:
             if laser_images:
                 doc.add_paragraph()  # Add space
                 laser_heading = doc.add_heading('Laser Analysis Summary', level=3)
+                
+                # Add LLS statistics table as first item
+                dive_folder = dive_info['path']
+                self.add_lls_stats_table(doc, dive_folder)
                 
                 for image_path, caption_text in laser_images:
                     try:
@@ -466,6 +475,324 @@ class DiveReportGenerator:
         """
         for pattern, caption in caption_dict.items():
             self.caption_mapping[pattern.lower()] = caption
+    
+    def read_lls_stats(self, dive_folder):
+        """
+        Read LLS statistics from QuickLook Summary file
+        
+        Args:
+            dive_folder (str): Path to the dive folder
+            
+        Returns:
+            dict: Dictionary of statistics or None if file not found
+        """
+        # Look for QuickLook Summary file
+        possible_paths = [
+            os.path.join(dive_folder, "products", "Report_Plots", "*_LLS_Voyis_QuickLook_Summary.txt"),
+            os.path.join(dive_folder, "products", "*_LLS_Voyis_QuickLook_Summary.txt"),
+            os.path.join(dive_folder, "Report_Plots", "*_LLS_Voyis_QuickLook_Summary.txt"),
+            os.path.join(dive_folder, "*_LLS_Voyis_QuickLook_Summary.txt")
+        ]
+        
+        stats_file = None
+        for pattern in possible_paths:
+            matches = glob.glob(pattern)
+            if matches:
+                stats_file = matches[0]
+                break
+        
+        if stats_file is None:
+            return None
+        
+        # Read and parse the QuickLook Summary file
+        raw_stats = {}
+        try:
+            with open(stats_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if ':' in line:
+                        parts = line.split(':', 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            value = parts[1].strip()
+                            raw_stats[key] = value
+            
+            # Map to expected fields
+            stats = {
+                'Raw XYZ LLS Files': raw_stats.get('Number of files', 'N/A'),
+                'Raw XYZ Total File Size': raw_stats.get('Total size of files', 'N/A').replace('MB', 'GB') if 'Total size of files' in raw_stats else 'N/A',
+                'L2 XYZ LLS Files': '0',  # Not in QuickLook file
+                'L2 XYZ Total File Size': '0 GB',  # Not in QuickLook file
+                'Laser Scan Settings': 'See QuickLook Summary',  # Not clearly defined in file
+                'Total Points Collected': raw_stats.get('Total Points Processed', 'N/A'),
+                'Percent Of Scans On Bottom': raw_stats.get('Percent of Good Points (DEPTH_FLAG=1)', 'N/A')
+            }
+            
+            # Fix file size conversion from MB to GB
+            if 'Total size of files' in raw_stats:
+                try:
+                    size_mb = float(raw_stats['Total size of files'].replace('MB', '').strip())
+                    size_gb = size_mb / 1024.0
+                    stats['Raw XYZ Total File Size'] = f"{size_gb:.2f} GB"
+                except:
+                    stats['Raw XYZ Total File Size'] = raw_stats['Total size of files']
+            
+            return stats
+        except Exception as e:
+            print(f"Error reading LLS QuickLook Summary file: {e}")
+            return None
+    
+    def add_lls_stats_table(self, doc, dive_folder):
+        """
+        Add a table with LLS QuickLook statistics to the document
+        
+        Args:
+            doc: Document object
+            dive_folder: Path to dive folder containing stats
+        """
+        # Find QuickLook Summary file
+        possible_paths = [
+            os.path.join(dive_folder, "products", "Report_Plots", "*_LLS_Voyis_QuickLook_Summary.txt"),
+            os.path.join(dive_folder, "products", "*_LLS_Voyis_QuickLook_Summary.txt"),
+            os.path.join(dive_folder, "Report_Plots", "*_LLS_Voyis_QuickLook_Summary.txt"),
+            os.path.join(dive_folder, "*_LLS_Voyis_QuickLook_Summary.txt")
+        ]
+        
+        stats_file = None
+        for pattern in possible_paths:
+            matches = glob.glob(pattern)
+            if matches:
+                stats_file = matches[0]
+                break
+        
+        if stats_file is None:
+            # No file found, add a note
+            para = doc.add_paragraph()
+            run = para.add_run("LLS QuickLook Summary: Not Available")
+            run.italic = True
+            doc.add_paragraph()
+            return
+        
+        # Read all lines from the file
+        stats_data = []
+        try:
+            with open(stats_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and ':' in line:
+                        parts = line.split(':', 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            value = parts[1].strip()
+                            stats_data.append((key, value))
+        except Exception as e:
+            print(f"Error reading LLS QuickLook Summary: {e}")
+            para = doc.add_paragraph()
+            run = para.add_run(f"Error reading LLS QuickLook Summary: {e}")
+            run.italic = True
+            doc.add_paragraph()
+            return
+        
+        if not stats_data:
+            return
+        
+        # Create table with all data
+        table = doc.add_table(rows=len(stats_data), cols=2)
+        table.style = 'Light Grid Accent 1'
+        
+        # Populate table
+        for i, (key, value) in enumerate(stats_data):
+            row = table.rows[i]
+            # Set label cell
+            label_cell = row.cells[0]
+            label_cell.text = key
+            # Make label bold
+            for paragraph in label_cell.paragraphs:
+                for run in paragraph.runs:
+                    run.bold = True
+            
+            # Set value cell
+            value_cell = row.cells[1]
+            value_cell.text = value
+        
+        # Add space after table
+        doc.add_paragraph()
+    
+    def read_image_overlap_stats(self, dive_folder):
+        """
+        Read image overlap and footprint statistics from summary files
+        
+        Args:
+            dive_folder (str): Path to the dive folder
+            
+        Returns:
+            dict: Dictionary of statistics or None if files not found
+        """
+        # Look for overlap summary files
+        base_patterns = [
+            os.path.join(dive_folder, "products", "Report_Plots"),
+            os.path.join(dive_folder, "products"),
+            os.path.join(dive_folder, "Report_Plots"),
+            dive_folder
+        ]
+        
+        stats = {}
+        
+        # Find and read overall overlap file
+        for base in base_patterns:
+            overall_file = os.path.join(base, "*_Image_Overall_Overlap_Summary.txt")
+            matches = glob.glob(overall_file)
+            if matches:
+                try:
+                    with open(matches[0], 'r') as f:
+                        content = f.read()
+                        # Extract specific metrics
+                        for line in content.split('\n'):
+                            if 'Total Pairs Checked:' in line:
+                                stats['Overall Total Pairs Checked'] = line.split(':')[1].strip()
+                            elif 'Total Overlapping Pairs:' in line and 'Overall' not in stats.get('Overall Overlapping Pairs', ''):
+                                stats['Overall Overlapping Pairs'] = line.split(':')[1].strip()
+                            elif 'Average Overlap Count per Image:' in line:
+                                stats['Average Overlap Count per Image'] = line.split(':')[1].strip()
+                    break
+                except Exception as e:
+                    print(f"Error reading overall overlap file: {e}")
+        
+        # Find and read vertical overlap file
+        for base in base_patterns:
+            vertical_file = os.path.join(base, "*_Image_Vertical_Overlap_Summary.txt")
+            matches = glob.glob(vertical_file)
+            if matches:
+                try:
+                    with open(matches[0], 'r') as f:
+                        content = f.read()
+                        # Extract specific metrics
+                        for line in content.split('\n'):
+                            if 'Total Overlapping Pairs:' in line:
+                                stats['Vertical Overlapping Pairs'] = line.split(':')[1].strip()
+                            elif 'Average Overlap:' in line and '%' in line:
+                                stats['Vertical Average Overlap'] = line.split(':')[1].strip()
+                    break
+                except Exception as e:
+                    print(f"Error reading vertical overlap file: {e}")
+        
+        # Find and read horizontal overlap file
+        for base in base_patterns:
+            horizontal_file = os.path.join(base, "*_Image_Horizontal_Overlap_Summary.txt")
+            matches = glob.glob(horizontal_file)
+            if matches:
+                try:
+                    with open(matches[0], 'r') as f:
+                        content = f.read()
+                        # Extract specific metrics
+                        for line in content.split('\n'):
+                            if 'Total Pairs Checked:' in line:
+                                stats['Horizontal Pairs Checked'] = line.split(':')[1].strip()
+                            elif 'Total Overlapping Pairs:' in line:
+                                stats['Horizontal Overlapping Pairs'] = line.split(':')[1].strip()
+                            elif 'Average Overlap:' in line and '%' in line:
+                                stats['Horizontal Average Overlap'] = line.split(':')[1].strip()
+                    break
+                except Exception as e:
+                    print(f"Error reading horizontal overlap file: {e}")
+        
+        return stats if stats else None
+    
+    def add_image_overlap_table(self, doc, dive_folder):
+        """
+        Add tables with image overlap statistics to the document
+        
+        Args:
+            doc: Document object
+            dive_folder: Path to dive folder containing stats
+        """
+        # Look for overlap summary files
+        base_patterns = [
+            os.path.join(dive_folder, "products", "Report_Plots"),
+            os.path.join(dive_folder, "products"),
+            os.path.join(dive_folder, "Report_Plots"),
+            dive_folder
+        ]
+        
+        # Dictionary to store file paths
+        summary_files = {}
+        
+        # Find all summary files
+        for base in base_patterns:
+            for file_type in ['Overall', 'Vertical', 'Horizontal', 'Footprint']:
+                pattern = os.path.join(base, f"*_Image_{file_type}_*Metrics*.txt")
+                matches = glob.glob(pattern)
+                if matches and file_type not in summary_files:
+                    summary_files[file_type] = matches[0]
+        
+        if not summary_files:
+            para = doc.add_paragraph()
+            run = para.add_run("Image Overlap Metrics: Not Available")
+            run.italic = True
+            doc.add_paragraph()
+            return
+        
+        # Process each summary file type
+        for file_type in ['Footprint', 'Overall', 'Vertical', 'Horizontal']:
+            if file_type not in summary_files:
+                continue
+                
+            file_path = summary_files[file_type]
+            
+            # Read file and extract key-value pairs
+            data_rows = []
+            try:
+                with open(file_path, 'r') as f:
+                    lines = f.readlines()
+                    
+                # Skip header lines and parse data
+                for line in lines:
+                    line = line.strip()
+                    if not line or '===' in line:
+                        continue
+                    if ':' in line:
+                        parts = line.split(':', 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip()
+                            value = parts[1].strip()
+                            # Skip empty values
+                            if value:
+                                data_rows.append((key, value))
+            except Exception as e:
+                print(f"Error reading {file_type} overlap file: {e}")
+                continue
+            
+            if not data_rows:
+                continue
+            
+            # Add section heading
+            heading_text = f"Image {file_type} Metrics"
+            heading = doc.add_paragraph()
+            run = heading.add_run(heading_text)
+            run.bold = True
+            run.font.size = Pt(11)
+            
+            # Create table
+            table = doc.add_table(rows=len(data_rows), cols=2)
+            table.style = 'Light Grid Accent 1'
+            
+            # Populate table
+            for i, (key, value) in enumerate(data_rows):
+                row = table.rows[i]
+                # Label cell
+                label_cell = row.cells[0]
+                label_cell.text = key
+                # Make label bold
+                for paragraph in label_cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.bold = True
+                
+                # Value cell
+                value_cell = row.cells[1]
+                value_cell.text = value
+            
+            # Add space after each table
+            doc.add_paragraph()
     
 class ReportGeneratorGUI:
     def __init__(self, root):

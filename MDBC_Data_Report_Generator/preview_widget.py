@@ -65,7 +65,7 @@ class PreviewWidget(ttk.Frame):
         # Configure scrollregion
         self.canvas.configure(scrollregion=(0, 0, self.page_width, self.page_height * 3))
         
-    def load_dive_preview(self, dive_info: Dict, metadata: Dict, images: List[str]):
+    def load_dive_preview(self, dive_info: Dict, metadata: Dict, images: List[str], map_folder: str = ""):
         """
         Load a dive preview
         
@@ -73,16 +73,22 @@ class PreviewWidget(ttk.Frame):
             dive_info: Dict with dive_name, dive_number, etc.
             metadata: Dict with dive metadata (date, vehicle, duration, etc.)
             images: List of image paths to display
+            map_folder: Optional path to folder containing dive maps
         """
         self.current_dive = dive_info
         self.current_metadata = metadata
         self.current_images = images
+        self.map_folder = map_folder
         
         # Update title
-        self.dive_label.config(text=f"{dive_info['dive_name']} - {len(images)} images")
+        self.dive_label.config(text=f"{dive_info['dive_name']} - {len(images)} files")
         
         # Clear canvas
         self.canvas.delete("all")
+        
+        # Clear image refs
+        if hasattr(self, 'image_refs'):
+            self.image_refs.clear()
         
         # Render preview
         self._render_preview()
@@ -152,93 +158,212 @@ class PreviewWidget(ttk.Frame):
         
         y_pos += 20
         
-        # Images section
-        if not self.current_images:
-            self.canvas.create_text(self.page_width // 2, y_pos,
-                                   text="No images found in Report_Plots",
-                                   font=("Arial", 10, "italic"),
-                                   fill='gray')
+        # Add dive map if available
+        if hasattr(self, 'map_folder') and self.map_folder and os.path.exists(self.map_folder):
+            map_file = self._find_map_file(csv_dive_number)
+            if map_file:
+                y_pos = self._add_image_to_canvas(map_file, y_pos, margin, content_width,
+                                                  f"Figure 1. Map of the AUV path for {csv_dive_number}")
+        
+        # Categorize images
+        vehicle_images = []
+        imaging_images = []
+        laser_images = []
+        
+        for image_path in self.current_images:
+            if not image_path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                continue  # Skip non-image files (like .txt)
+                
+            filename = os.path.basename(image_path).lower()
+            filename_normalized = filename.replace('_', '').replace('-', '')
+            
+            # Categorize based on filename patterns
+            if any(key in filename_normalized for key in [
+                'navmotionanalysis', 'navcomprehensive', 'navdepth', 'navheading', 
+                'navpitch', 'navroll', 'navheave', 'navcrab'
+            ]):
+                vehicle_images.append(image_path)
+            elif any(key in filename_normalized for key in [
+                'imagetophighlights', 'imagealtitudehistogram', 'imageoverlapmap',
+                'imagefootprint', 'imagevisibility', 'imagehorizontaloverlap', 'imageverticaloverlap'
+            ]):
+                imaging_images.append(image_path)
+            elif any(key in filename_normalized for key in [
+                'llsauvdiveprofile', 'llsauvposition', 'llsauvdepth', 'llsauvintensity', 'llsauvdeviation'
+            ]):
+                laser_images.append(image_path)
+        
+        figure_num = 2  # Start at 2 since map is figure 1
+        
+        # Vehicle Data Summary section
+        if vehicle_images:
+            self.canvas.create_text(margin, y_pos,
+                                   text="Vehicle Data Summary",
+                                   font=("Arial", 12, "bold"),
+                                   anchor=tk.W,
+                                   fill='#2c3e50')
             y_pos += 30
-        else:
-            # Show up to 3 preview images
-            preview_count = min(3, len(self.current_images))
             
-            for i in range(preview_count):
-                img_path = self.current_images[i]
-                
-                # Add section header if first image in category
-                if i == 0:
-                    self.canvas.create_text(margin, y_pos,
-                                           text="Vehicle Data Summary",
-                                           font=("Arial", 11, "bold"),
-                                           anchor=tk.W)
-                    y_pos += 25
-                
-                # Try to load and display image
-                try:
-                    img = Image.open(img_path)
-                    
-                    # Scale to fit width
-                    max_width = content_width
-                    max_height = 400
-                    
-                    img_ratio = img.width / img.height
-                    target_width = min(max_width, img.width)
-                    target_height = int(target_width / img_ratio)
-                    
-                    if target_height > max_height:
-                        target_height = max_height
-                        target_width = int(target_height * img_ratio)
-                    
-                    img_resized = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                    photo = ImageTk.PhotoImage(img_resized)
-                    
-                    # Keep reference to avoid garbage collection
-                    if not hasattr(self, 'image_refs'):
-                        self.image_refs = []
-                    self.image_refs.append(photo)
-                    
-                    # Center image
-                    x_pos = self.page_width // 2
-                    self.canvas.create_image(x_pos, y_pos + target_height // 2,
-                                            image=photo,
-                                            anchor=tk.N)
-                    y_pos += target_height + 10
-                    
-                    # Caption
-                    caption = f"Figure {i+1}. {os.path.basename(img_path)}"
-                    caption_lines = self._wrap_text(caption, content_width, ("Arial", 8))
-                    for line in caption_lines:
-                        self.canvas.create_text(self.page_width // 2, y_pos,
-                                               text=line,
-                                               font=("Arial", 8, "italic"),
-                                               anchor=tk.N)
-                        y_pos += 14
-                    
-                    y_pos += 20
-                    
-                except Exception as e:
-                    # Show error message with details
-                    error_text = f"[Error loading {os.path.basename(img_path)}: {str(e)[:50]}]"
-                    self.canvas.create_text(self.page_width // 2, y_pos,
-                                           text=error_text,
-                                           font=("Arial", 8, "italic"),
-                                           fill='red',
-                                           width=content_width)
-                    y_pos += 40
-                    print(f"Preview error for {img_path}: {e}")
+            # Show first 3 vehicle images
+            for img_path in vehicle_images[:3]:
+                caption = f"Figure {figure_num}. {os.path.basename(img_path)}"
+                y_pos = self._add_image_to_canvas(img_path, y_pos, margin, content_width, caption)
+                figure_num += 1
             
-            # Show remaining image count
-            if len(self.current_images) > preview_count:
-                remaining = len(self.current_images) - preview_count
+            if len(vehicle_images) > 3:
                 self.canvas.create_text(self.page_width // 2, y_pos,
-                                       text=f"... and {remaining} more images",
-                                       font=("Arial", 10, "italic"),
+                                       text=f"... and {len(vehicle_images) - 3} more vehicle plots",
+                                       font=("Arial", 9, "italic"),
                                        fill='gray')
-                y_pos += 30
+                y_pos += 25
+        
+        # Imaging Summary section
+        if imaging_images:
+            y_pos += 20
+            self.canvas.create_text(margin, y_pos,
+                                   text="Imaging Summary",
+                                   font=("Arial", 12, "bold"),
+                                   anchor=tk.W,
+                                   fill='#2c3e50')
+            y_pos += 30
+            
+            # Show first 3 imaging images
+            for img_path in imaging_images[:3]:
+                caption = f"Figure {figure_num}. {os.path.basename(img_path)}"
+                y_pos = self._add_image_to_canvas(img_path, y_pos, margin, content_width, caption)
+                figure_num += 1
+            
+            if len(imaging_images) > 3:
+                self.canvas.create_text(self.page_width // 2, y_pos,
+                                       text=f"... and {len(imaging_images) - 3} more imaging plots",
+                                       font=("Arial", 9, "italic"),
+                                       fill='gray')
+                y_pos += 25
+        
+        # Laser Analysis Summary section
+        if laser_images:
+            y_pos += 20
+            self.canvas.create_text(margin, y_pos,
+                                   text="Laser Analysis Summary",
+                                   font=("Arial", 12, "bold"),
+                                   anchor=tk.W,
+                                   fill='#2c3e50')
+            y_pos += 30
+            
+            # Show first 3 laser images
+            for img_path in laser_images[:3]:
+                caption = f"Figure {figure_num}. {os.path.basename(img_path)}"
+                y_pos = self._add_image_to_canvas(img_path, y_pos, margin, content_width, caption)
+                figure_num += 1
+            
+            if len(laser_images) > 3:
+                self.canvas.create_text(self.page_width // 2, y_pos,
+                                       text=f"... and {len(laser_images) - 3} more laser plots",
+                                       font=("Arial", 9, "italic"),
+                                       fill='gray')
+                y_pos += 25
+        
+        # Show summary
+        total_shown = min(3, len(vehicle_images)) + min(3, len(imaging_images)) + min(3, len(laser_images))
+        total_images = len(vehicle_images) + len(imaging_images) + len(laser_images)
+        
+        if total_images > total_shown:
+            y_pos += 30
+            self.canvas.create_text(self.page_width // 2, y_pos,
+                                   text=f"Preview showing {total_shown + (1 if hasattr(self, 'map_folder') and self.map_folder else 0)} of {total_images + (1 if hasattr(self, 'map_folder') and self.map_folder else 0)} total figures",
+                                   font=("Arial", 10, "bold"),
+                                   fill='#34495e')
+            y_pos += 30
         
         # Update scroll region to fit content
         self.canvas.configure(scrollregion=(0, 0, self.page_width, y_pos + 50))
+    
+    def _find_map_file(self, csv_dive_number: str) -> Optional[str]:
+        """Find map file for the dive"""
+        if not self.map_folder or not os.path.exists(self.map_folder):
+            return None
+        
+        # Extract dive number from csv_dive_number (e.g., DIVE021 -> 021)
+        dive_num_part = csv_dive_number.upper().replace('DIVE', '').strip()
+        
+        # Build expected map filename pattern
+        map_filename_pattern = f"DIVE{dive_num_part}_map"
+        
+        # Search for map file
+        for file in os.listdir(self.map_folder):
+            if map_filename_pattern.lower() in file.lower():
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')):
+                    return os.path.join(self.map_folder, file)
+        
+        return None
+    
+    def _add_image_to_canvas(self, img_path: str, y_pos: int, margin: int, 
+                            content_width: int, caption: str) -> int:
+        """
+        Add an image to the canvas and return the new y position
+        
+        Args:
+            img_path: Path to image file
+            y_pos: Current y position on canvas
+            margin: Left/right margin
+            content_width: Available width for content
+            caption: Caption text for the image
+            
+        Returns:
+            New y position after adding image and caption
+        """
+        try:
+            img = Image.open(img_path)
+            
+            # Scale to fit width
+            max_width = content_width
+            max_height = 350
+            
+            img_ratio = img.width / img.height
+            target_width = min(max_width, img.width)
+            target_height = int(target_width / img_ratio)
+            
+            if target_height > max_height:
+                target_height = max_height
+                target_width = int(target_height * img_ratio)
+            
+            img_resized = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            photo = ImageTk.PhotoImage(img_resized)
+            
+            # Keep reference to avoid garbage collection
+            if not hasattr(self, 'image_refs'):
+                self.image_refs = []
+            self.image_refs.append(photo)
+            
+            # Center image
+            x_pos = self.page_width // 2
+            self.canvas.create_image(x_pos, y_pos + target_height // 2,
+                                    image=photo,
+                                    anchor=tk.N)
+            y_pos += target_height + 10
+            
+            # Caption
+            caption_lines = self._wrap_text(caption, content_width, ("Arial", 8))
+            for line in caption_lines:
+                self.canvas.create_text(self.page_width // 2, y_pos,
+                                       text=line,
+                                       font=("Arial", 8, "italic"),
+                                       anchor=tk.N)
+                y_pos += 14
+            
+            y_pos += 25
+            
+        except Exception as e:
+            # Show error message
+            error_text = f"[Error loading {os.path.basename(img_path)}]"
+            self.canvas.create_text(self.page_width // 2, y_pos,
+                                   text=error_text,
+                                   font=("Arial", 8, "italic"),
+                                   fill='red')
+            y_pos += 30
+            print(f"Preview error for {img_path}: {e}")
+        
+        return y_pos
         
     def _wrap_text(self, text: str, max_width: int, font: tuple) -> List[str]:
         """Wrap text to fit within max_width"""

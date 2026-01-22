@@ -450,7 +450,10 @@ class MainGUI:
         if first_dive['report_plots_path']:
             images = self.dive_finder.get_images_from_report_plots(first_dive['report_plots_path'])
         
-        self.preview_widget.load_dive_preview(first_dive, metadata, images)
+        # Get map folder
+        map_folder = self.map_folder_var.get().strip() if self.map_folder_var.get() else ""
+        
+        self.preview_widget.load_dive_preview(first_dive, metadata, images, map_folder)
         
     def generate_report(self):
         """Generate the report"""

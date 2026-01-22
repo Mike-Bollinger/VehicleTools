@@ -374,7 +374,7 @@ class ReportGenerator:
             print(f"Error adding map {map_file}: {e}")
     
     def _add_metrics_table(self, doc: Document, metrics_path: str, title: str):
-        """Add metrics from text file as a compact formatted table"""
+        """Add metrics from text file as a properly formatted table"""
         try:
             if not os.path.exists(metrics_path):
                 return
@@ -391,16 +391,44 @@ class ReportGenerator:
             para.add_run(title).bold = True
             para.paragraph_format.space_after = Pt(6)
             
-            # Add content as compact formatted text
+            # Parse content into key-value pairs for table
+            data_rows = []
             for line in content.split('\n'):
-                if line.strip():
-                    p = doc.add_paragraph(line, style='List Bullet' if line.startswith('-') or line.startswith('•') else None)
-                    # Single spacing and minimal spacing after
-                    p.paragraph_format.line_spacing = 1.0
-                    p.paragraph_format.space_after = Pt(0)
-                    p.paragraph_format.space_before = Pt(0)
+                line = line.strip()
+                if not line or '===' in line:
+                    continue
+                if ':' in line:
+                    parts = line.split(':', 1)
+                    if len(parts) == 2:
+                        key = parts[0].strip()
+                        value = parts[1].strip()
+                        # Skip empty values
+                        if value:
+                            data_rows.append((key, value))
             
-            # Minimal space after metrics block
+            if not data_rows:
+                return
+            
+            # Create table
+            table = doc.add_table(rows=len(data_rows), cols=2)
+            table.style = 'Light Grid Accent 1'
+            
+            # Populate table
+            for i, (key, value) in enumerate(data_rows):
+                row = table.rows[i]
+                # Label cell
+                label_cell = row.cells[0]
+                label_cell.text = key
+                # Make label bold
+                for paragraph in label_cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.bold = True
+                
+                # Value cell
+                value_cell = row.cells[1]
+                value_cell.text = value
+            
+            # Space after table
             doc.add_paragraph().paragraph_format.space_after = Pt(6)
             
         except Exception as e:
