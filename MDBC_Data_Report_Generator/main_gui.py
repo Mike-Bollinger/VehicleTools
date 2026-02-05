@@ -219,13 +219,14 @@ class MainGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Dive Report Generator - Enhanced")
-        self.root.geometry("1400x900")
+        self.root.geometry("1100x700")
         
         self.dive_finder = DiveFinder()
         self.report_generator = ReportGenerator()
         
         self.csv_file_var = tk.StringVar(value="C:\\Users\\Mike.Bollinger\\Downloads\\EN2501_AUV_Mission_Log_IMAGING_LASER - Mission_Overview.csv")
         self.map_folder_var = tk.StringVar(value="")
+        self.vis_maps_folder_var = tk.StringVar(value="")
         self.output_folder_var = tk.StringVar(value=os.path.dirname(__file__))
         
         self.metadata_cache = {}
@@ -240,16 +241,39 @@ class MainGUI:
         main_container = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         main_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Left panel (controls)
-        left_panel = ttk.Frame(main_container)
-        main_container.add(left_panel, weight=1)
+        # Left panel container with scrollbar
+        left_container = ttk.Frame(main_container)
+        main_container.add(left_container, weight=1)
+        
+        # Create canvas and scrollbar for left panel
+        left_canvas = tk.Canvas(left_container, highlightthickness=0)
+        left_scrollbar = ttk.Scrollbar(left_container, orient=tk.VERTICAL, command=left_canvas.yview)
+        self.scrollable_left_frame = ttk.Frame(left_canvas)
+        
+        # Configure canvas
+        self.scrollable_left_frame.bind(
+            "<Configure>",
+            lambda e: left_canvas.configure(scrollregion=left_canvas.bbox("all"))
+        )
+        
+        left_canvas.create_window((0, 0), window=self.scrollable_left_frame, anchor=tk.NW)
+        left_canvas.configure(yscrollcommand=left_scrollbar.set)
+        
+        # Pack scrollbar and canvas
+        left_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        left_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Enable mousewheel scrolling
+        def _on_mousewheel(event):
+            left_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
         
         # Right panel (preview)
         right_panel = ttk.Frame(main_container)
         main_container.add(right_panel, weight=1)
         
-        # Setup left panel
-        self.setup_left_panel(left_panel)
+        # Setup left panel content in scrollable frame
+        self.setup_left_panel(self.scrollable_left_frame)
         
         # Setup right panel (preview)
         self.preview_widget = PreviewWidget(right_panel)
@@ -282,6 +306,16 @@ class MainGUI:
         
         ttk.Entry(map_entry_frame, textvariable=self.map_folder_var).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         ttk.Button(map_entry_frame, text="Browse", command=self.browse_map_folder).pack(side=tk.LEFT)
+        
+        # Visibility Maps Folder section (optional)
+        vis_maps_frame = ttk.LabelFrame(parent, text="Visibility Maps Folder (Optional)", padding=10)
+        vis_maps_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        vis_maps_entry_frame = ttk.Frame(vis_maps_frame)
+        vis_maps_entry_frame.pack(fill=tk.X)
+        
+        ttk.Entry(vis_maps_entry_frame, textvariable=self.vis_maps_folder_var).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        ttk.Button(vis_maps_entry_frame, text="Browse", command=self.browse_vis_maps_folder).pack(side=tk.LEFT)
         
         # Data Sources section
         sources_frame = ttk.LabelFrame(parent, text="Data Sources", padding=10)
@@ -354,6 +388,15 @@ class MainGUI:
         )
         if folder:
             self.map_folder_var.set(folder)
+    
+    def browse_vis_maps_folder(self):
+        """Browse for visibility maps folder"""
+        folder = filedialog.askdirectory(
+            title="Select Visibility Maps Folder",
+            initialdir=self.vis_maps_folder_var.get() if self.vis_maps_folder_var.get() else os.path.dirname(__file__)
+        )
+        if folder:
+            self.vis_maps_folder_var.set(folder)
             
     def browse_output(self):
         """Browse for output folder"""
@@ -453,7 +496,10 @@ class MainGUI:
         # Get map folder
         map_folder = self.map_folder_var.get().strip() if self.map_folder_var.get() else ""
         
-        self.preview_widget.load_dive_preview(first_dive, metadata, images, map_folder)
+        # Get vis maps folder
+        vis_maps_folder = self.vis_maps_folder_var.get().strip() if self.vis_maps_folder_var.get() else ""
+        
+        self.preview_widget.load_dive_preview(first_dive, metadata, images, map_folder, vis_maps_folder)
         
     def generate_report(self):
         """Generate the report"""
@@ -493,11 +539,16 @@ class MainGUI:
         # Get map folder (optional)
         map_folder = self.map_folder_var.get().strip()
         
+        # Get vis maps folder (optional)
+        vis_maps_folder = self.vis_maps_folder_var.get().strip()
+        
         try:
             log_progress(f"Generating report for {len(selected)} dives...")
             log_progress(f"Output: {output_path}")
             if map_folder:
                 log_progress(f"Map folder: {map_folder}")
+            if vis_maps_folder:
+                log_progress(f"Visibility maps folder: {vis_maps_folder}")
             log_progress("-" * 50)
             
             success = self.report_generator.generate_report(
@@ -505,7 +556,8 @@ class MainGUI:
                 self.metadata_cache, 
                 output_path, 
                 log_progress,
-                map_folder=map_folder
+                map_folder=map_folder,
+                vis_maps_folder=vis_maps_folder
             )
             
             if success:

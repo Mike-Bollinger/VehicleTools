@@ -65,7 +65,8 @@ class PreviewWidget(ttk.Frame):
         # Configure scrollregion
         self.canvas.configure(scrollregion=(0, 0, self.page_width, self.page_height * 3))
         
-    def load_dive_preview(self, dive_info: Dict, metadata: Dict, images: List[str], map_folder: str = ""):
+    def load_dive_preview(self, dive_info: Dict, metadata: Dict, images: List[str], 
+                          map_folder: str = "", vis_maps_folder: str = ""):
         """
         Load a dive preview
         
@@ -74,11 +75,13 @@ class PreviewWidget(ttk.Frame):
             metadata: Dict with dive metadata (date, vehicle, duration, etc.)
             images: List of image paths to display
             map_folder: Optional path to folder containing dive maps
+            vis_maps_folder: Optional path to folder containing visibility maps
         """
         self.current_dive = dive_info
         self.current_metadata = metadata
         self.current_images = images
         self.map_folder = map_folder
+        self.vis_maps_folder = vis_maps_folder
         
         # Update title
         self.dive_label.config(text=f"{dive_info['dive_name']} - {len(images)} files")
@@ -168,6 +171,7 @@ class PreviewWidget(ttk.Frame):
         # Categorize images
         vehicle_images = []
         imaging_images = []
+        visibility_images = []
         laser_images = []
         
         for image_path in self.current_images:
@@ -177,15 +181,15 @@ class PreviewWidget(ttk.Frame):
             filename = os.path.basename(image_path).lower()
             filename_normalized = filename.replace('_', '').replace('-', '')
             
-            # Categorize based on filename patterns
-            if any(key in filename_normalized for key in [
-                'navmotionanalysis', 'navcomprehensive', 'navdepth', 'navheading', 
-                'navpitch', 'navroll', 'navheave', 'navcrab'
-            ]):
+            # Categorize based on report_generator.py ordered_items
+            # Only include what's actually in the report
+            if 'navmotionanalysis' in filename_normalized:
                 vehicle_images.append(image_path)
+            elif 'imagevisibility' in filename_normalized:
+                visibility_images.append(image_path)
             elif any(key in filename_normalized for key in [
-                'imagetophighlights', 'imagealtitudehistogram', 'imageoverlapmap',
-                'imagefootprint', 'imagevisibility', 'imagehorizontaloverlap', 'imageverticaloverlap'
+                'imagetophighlights', 'imagealtitudehistogram', 'imageoverall',
+                'imagefootprint', 'imagehorizontal', 'imagevertical'
             ]):
                 imaging_images.append(image_path)
             elif any(key in filename_normalized for key in [
@@ -240,6 +244,37 @@ class PreviewWidget(ttk.Frame):
                                        fill='gray')
                 y_pos += 25
         
+        # Visibility Analysis section
+        if visibility_images or (hasattr(self, 'vis_maps_folder') and self.vis_maps_folder):
+            y_pos += 20
+            self.canvas.create_text(margin, y_pos,
+                                   text="Visibility Analysis",
+                                   font=("Arial", 12, "bold"),
+                                   anchor=tk.W,
+                                   fill='#2c3e50')
+            y_pos += 30
+            
+            # Add visibility map if available
+            if hasattr(self, 'vis_maps_folder') and self.vis_maps_folder:
+                vis_map_file = self._find_vis_map_file(csv_dive_number)
+                if vis_map_file:
+                    caption = f"Figure {figure_num}. Visibility Map for {csv_dive_number}"
+                    y_pos = self._add_image_to_canvas(vis_map_file, y_pos, margin, content_width, caption)
+                    figure_num += 1
+            
+            # Show visibility analysis images
+            for img_path in visibility_images[:2]:
+                caption = f"Figure {figure_num}. {os.path.basename(img_path)}"
+                y_pos = self._add_image_to_canvas(img_path, y_pos, margin, content_width, caption)
+                figure_num += 1
+            
+            if len(visibility_images) > 2:
+                self.canvas.create_text(self.page_width // 2, y_pos,
+                                       text=f"... and {len(visibility_images) - 2} more visibility plots",
+                                       font=("Arial", 9, "italic"),
+                                       fill='gray')
+                y_pos += 25
+        
         # Laser Analysis Summary section
         if laser_images:
             y_pos += 20
@@ -264,13 +299,21 @@ class PreviewWidget(ttk.Frame):
                 y_pos += 25
         
         # Show summary
-        total_shown = min(3, len(vehicle_images)) + min(3, len(imaging_images)) + min(3, len(laser_images))
-        total_images = len(vehicle_images) + len(imaging_images) + len(laser_images)
+        total_shown = (min(3, len(vehicle_images)) + min(3, len(imaging_images)) + 
+                      min(2, len(visibility_images)) + min(3, len(laser_images)))
+        total_images = len(vehicle_images) + len(imaging_images) + len(visibility_images) + len(laser_images)
+        
+        # Count maps
+        maps_count = 0
+        if hasattr(self, 'map_folder') and self.map_folder and self._find_map_file(csv_dive_number):
+            maps_count += 1
+        if hasattr(self, 'vis_maps_folder') and self.vis_maps_folder and self._find_vis_map_file(csv_dive_number):
+            maps_count += 1
         
         if total_images > total_shown:
             y_pos += 30
             self.canvas.create_text(self.page_width // 2, y_pos,
-                                   text=f"Preview showing {total_shown + (1 if hasattr(self, 'map_folder') and self.map_folder else 0)} of {total_images + (1 if hasattr(self, 'map_folder') and self.map_folder else 0)} total figures",
+                                   text=f"Preview showing {total_shown + maps_count} of {total_images + maps_count} total figures",
                                    font=("Arial", 10, "bold"),
                                    fill='#34495e')
             y_pos += 30
@@ -294,6 +337,26 @@ class PreviewWidget(ttk.Frame):
             if map_filename_pattern.lower() in file.lower():
                 if file.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')):
                     return os.path.join(self.map_folder, file)
+        
+        return None
+    
+    def _find_vis_map_file(self, csv_dive_number: str) -> Optional[str]:
+        """Find visibility map file for the dive"""
+        if not hasattr(self, 'vis_maps_folder') or not self.vis_maps_folder or not os.path.exists(self.vis_maps_folder):
+            return None
+        
+        # Extract dive number from csv_dive_number (e.g., DIVE021 -> 021)
+        dive_num_part = csv_dive_number.upper().replace('DIVE', '').strip()
+        
+        # Build expected vis map filename pattern: DIVE###_Visibility
+        vis_map_filename_pattern = f"DIVE{dive_num_part}_Visibility"
+        
+        # Search for vis map file
+        for file in os.listdir(self.vis_maps_folder):
+            file_base = os.path.splitext(file)[0]
+            if file_base.upper() == vis_map_filename_pattern.upper():
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')):
+                    return os.path.join(self.vis_maps_folder, file)
         
         return None
     

@@ -5,9 +5,12 @@ Handles creation of Word documents from dive data
 
 import os
 import pandas as pd
+import glob
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 from datetime import datetime
 from typing import Dict, List, Optional, Callable
 
@@ -48,6 +51,52 @@ class ReportGenerator:
             'image_overall_overlap_metrics.txt': 'Overall Overlap Metrics',
             'image_vertical_overlap_metrics.txt': 'Vertical Overlap Metrics',
             'image_horizontal_overlap_metrics.txt': 'Horizontal Overlap Metrics'
+        }
+        
+        # Define which metrics to include for each table
+        self.metrics_filters = {
+            'Image Summary Metrics': [
+                'Processed Still Images',
+                'Processed Stills Size',
+                'Raw Images',
+                'Raw Images Size',
+                'Total Files',
+                'Total Size'
+            ],
+            'Image Footprint Metrics': [
+                'Total Images Analyzed',
+                'Average Altitude',
+                'Average Width',
+                'Average Height',
+                'Average Footprint Area',
+                'Latitude Range',
+                'Longitude Range'
+            ],
+            'Overall Overlap Metrics': [
+                'Total Pairs Checked',
+                'Total Overlapping Pairs',
+                'Average Overlap Count per Image'
+            ],
+            'Vertical Overlap Metrics': [
+                'Total Overlapping Pairs',
+                'Average Overlap'
+            ],
+            'Horizontal Overlap Metrics': [
+                'Total Pairs Checked',
+                'Total Overlapping Pairs',
+                'Average Overlap'
+            ],
+            'LLS QuickLook Summary': [
+                'Total Run Time',
+                'Total size of files',
+                'Number of files',
+                'Total Points Processed',
+                'Percent of Good Points',
+                'Average Point Density',
+                'Total Dive Time',
+                'Total Voyis Time',
+                'Total Voyis Time vs Total Dive Time'
+            ]
         }
     
     def load_metadata_from_csv(self, csv_path: str) -> Dict[str, Dict]:
@@ -223,7 +272,8 @@ class ReportGenerator:
     def add_dive_section(self, doc: Document, dive_info: Dict, metadata: Dict, 
                         images: List[str], categorized_images: Dict[str, List[str]] = None,
                         progress_callback: Optional[Callable] = None,
-                        map_folder: str = ""):
+                        map_folder: str = "",
+                        vis_maps_folder: str = ""):
         """
         Add a complete dive section to the document
         
@@ -235,6 +285,7 @@ class ReportGenerator:
             categorized_images: Optional dict with categorized images (deprecated)
             progress_callback: Optional callback for progress updates
             map_folder: Optional path to folder containing dive maps
+            vis_maps_folder: Optional path to folder containing visibility maps
         """
         dive_name = dive_info['dive_name']  # Folder name (for file matching)
         dive_number = dive_info['dive_number'].lstrip('0') or '0'
@@ -273,7 +324,7 @@ class ReportGenerator:
             # Pass both folder name (for file matching) and CSV dive number (for captions)
             # Figure numbering starts at 2 since map is Figure A#.1
             self._add_ordered_content(doc, dive_name, csv_dive_number, dive_number, 
-                                     report_plots_path, all_files, progress_callback)
+                                     report_plots_path, all_files, progress_callback, vis_maps_folder)
         
         # Page break
         doc.add_page_break()
@@ -344,14 +395,11 @@ class ReportGenerator:
             return
         
         try:
-            # Add space before map
-            doc.add_paragraph()
-            
             # Add map image
             doc.add_picture(map_file, width=Inches(6.0))
             
             # Add caption
-            caption_text = (f"Figure A{dive_number}.1. Map of the AUV path for {csv_dive_number}. "
+            caption_text = (f"Map of the AUV path for {csv_dive_number}. "
                           f"The trackline of the AUV is shown in a thin black line. Altitude for "
                           f"acquired images is shown by color indicating too low (<4) in yellow, "
                           f"optimal altitude in orange, and too high (>8m) in violet. The start and "
@@ -359,12 +407,12 @@ class ReportGenerator:
                           f"are shown as standalone green circles.")
             
             caption_para = doc.add_paragraph()
-            caption_para.add_run(caption_text).italic = True
-            caption_para.paragraph_format.space_after = Pt(12)
+            caption_para.add_run(f"Figure A{dive_number}.1. ").bold = True
+            caption_para.add_run(caption_text)
+            caption_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            caption_para.paragraph_format.space_after = Pt(6)
             
-            # Add space after caption
-            doc.add_paragraph()
-            
+
             if progress_callback:
                 progress_callback(f"  Added map for {csv_dive_number}")
                 
@@ -372,6 +420,82 @@ class ReportGenerator:
             if progress_callback:
                 progress_callback(f"  Error adding map for {csv_dive_number}: {e}")
             print(f"Error adding map {map_file}: {e}")
+    
+    def _add_visibility_map(self, doc: Document, csv_dive_number: str, 
+                           dive_number: str, vis_maps_folder: str, 
+                           progress_callback: Optional[Callable] = None,
+                           figure_number: int = 2) -> bool:
+        """
+        Add visibility map image to the document
+        
+        Args:
+            doc: Document object
+            csv_dive_number: Dive number from CSV (e.g., DIVE021)
+            dive_number: Numeric dive number for figure numbering (e.g., 21)
+            vis_maps_folder: Path to folder containing visibility maps
+            progress_callback: Optional callback for progress updates
+            figure_number: Figure number within the dive section
+            
+        Returns:
+            True if map was successfully added, False otherwise
+        """
+        if not vis_maps_folder or not os.path.exists(vis_maps_folder):
+            if progress_callback:
+                progress_callback(f"  Vis maps folder not found: {vis_maps_folder}")
+            return False
+        
+        # Extract dive number from csv_dive_number (e.g., DIVE021 -> 021)
+        dive_num_part = csv_dive_number.upper().replace('DIVE', '').strip()
+        
+        # Build search pattern: just DIVE###
+        dive_pattern = f"DIVE{dive_num_part}"
+        
+        if progress_callback:
+            progress_callback(f"  Looking for visibility map containing: {dive_pattern}")
+        
+        # Search for vis map file - just check if DIVE### appears anywhere in filename
+        vis_map_file = None
+        for file in os.listdir(vis_maps_folder):
+            # Check if dive pattern appears in filename (case insensitive)
+            if dive_pattern.upper() in file.upper():
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')):
+                    vis_map_file = os.path.join(vis_maps_folder, file)
+                    if progress_callback:
+                        progress_callback(f"  Found visibility map: {file}")
+                    break
+        
+        if not vis_map_file:
+            if progress_callback:
+                progress_callback(f"  No visibility map found for {csv_dive_number} (no file containing '{dive_pattern}')")
+            return False
+        
+        try:
+            # Add the visibility map image
+            doc.add_picture(vis_map_file, width=Inches(6))
+            
+            # Add caption
+            caption_text = (f"Machine learning visibility analysis map for {csv_dive_number}. "
+                          f"Visibility is binned into categories excellent (dark green), good (light green), "
+                          f"fair (yellow), poor (orange), and zero (red). The trackline of the AUV is shown "
+                          f"in a thin black line. The start and end of the trackline are labeled. Any visibility "
+                          f"of the thin black line without colored points indicates images were not taken at that location.")
+            
+            caption_para = doc.add_paragraph()
+            caption_para.add_run(f"Figure A{dive_number}.{figure_number}. ").bold = True
+            caption_para.add_run(caption_text)
+            caption_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            caption_para.paragraph_format.space_after = Pt(6)
+            
+            if progress_callback:
+                progress_callback(f"  Added visibility map for {csv_dive_number}")
+            
+            return True
+                
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f"  Error adding visibility map for {csv_dive_number}: {e}")
+            print(f"Error adding visibility map {vis_map_file}: {e}")
+            return False
     
     def _add_metrics_table(self, doc: Document, metrics_path: str, title: str):
         """Add metrics from text file as a properly formatted table"""
@@ -386,7 +510,6 @@ class ReportGenerator:
                 return
             
             # Add title
-            doc.add_paragraph()
             para = doc.add_paragraph()
             para.add_run(title).bold = True
             para.paragraph_format.space_after = Pt(6)
@@ -409,9 +532,22 @@ class ReportGenerator:
             if not data_rows:
                 return
             
-            # Create table
+            # Apply filtering if specified
+            if title in self.metrics_filters:
+                allowed_keys = self.metrics_filters[title]
+                filtered_rows = []
+                for key, value in data_rows:
+                    if key in allowed_keys:
+                        filtered_rows.append((key, value))
+                data_rows = filtered_rows
+            
+            if not data_rows:
+                return
+            
+            # Create table with white background and black borders
             table = doc.add_table(rows=len(data_rows), cols=2)
-            table.style = 'Light Grid Accent 1'
+            table.style = 'Table Grid'
+            table.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             # Populate table
             for i, (key, value) in enumerate(data_rows):
@@ -428,21 +564,40 @@ class ReportGenerator:
                 value_cell = row.cells[1]
                 value_cell.text = value
             
-            # Space after table
-            doc.add_paragraph().paragraph_format.space_after = Pt(6)
+            # Reduced space after table
+            doc.add_paragraph().paragraph_format.space_after = Pt(0)
             
         except Exception as e:
             print(f"Error reading metrics file {metrics_path}: {e}")
     
+    def _add_lls_quicklook_table(self, doc: Document, report_plots_path: str, dive_folder_name: str):
+        """Add LLS QuickLook Summary as a table"""
+        try:
+            # Search for LLS QuickLook Summary file
+            pattern = os.path.join(report_plots_path, f"*_LLS_Voyis_QuickLook_Summary.txt")
+            matching_files = glob.glob(pattern)
+            
+            if not matching_files:
+                return
+            
+            quicklook_path = matching_files[0]
+            
+            # Use the standard metrics table method with filtering
+            self._add_metrics_table(doc, quicklook_path, 'LLS QuickLook Summary')
+            
+        except Exception as e:
+            print(f"Error adding LLS QuickLook Summary: {e}")
+    
     def _add_ordered_content(self, doc: Document, dive_folder_name: str, csv_dive_number: str,
                             dive_number: str, report_plots_path: str, all_files: Dict[str, str],
-                            progress_callback: Optional[Callable]):
+                            progress_callback: Optional[Callable], vis_maps_folder: str = ""):
         """
         Add content in specific order with metrics tables interspersed
         dive_folder_name: folder name for file matching
         csv_dive_number: dive number from CSV for captions (e.g., 'DIVE021')
         dive_number: numeric dive number for figure numbering (e.g., '21')
         all_files: dict mapping normalized filename to full path
+        vis_maps_folder: optional path to folder containing visibility maps
         """
         # Start at 2 since map is Figure A#.1
         figure_counter = 2
@@ -468,10 +623,12 @@ class ReportGenerator:
             
             # Visibility Section
             ('visibility_analysis', 'heading', 'Visibility Analysis'),
+            ('visibility_map', 'vis_map', None),
             ('image_visibility_analysis', 'image', None),
             
             # LLS Section
             ('lls_analysis', 'heading', 'Laser Line Scan Analysis'),
+            ('lls_quicklook', 'lls_metrics', None),
             ('lls_auv_dive_profile', 'image', None),
             ('lls_auv_position', 'image', None),
             ('lls_auv_depth_vs_intensity', 'image', None),
@@ -482,7 +639,6 @@ class ReportGenerator:
         
         for item_key, item_type, item_title in ordered_items:
             if item_type == 'heading':
-                doc.add_paragraph()
                 doc.add_heading(item_title, level=3)
                 
             elif item_type == 'metrics':
@@ -493,6 +649,16 @@ class ReportGenerator:
                     metrics_path = os.path.join(report_plots_path, f"{dive_folder_name}_{item_key}")
                 
                 self._add_metrics_table(doc, metrics_path, item_title)
+                
+            elif item_type == 'lls_metrics':
+                # Handle LLS QuickLook Summary
+                self._add_lls_quicklook_table(doc, report_plots_path, dive_folder_name)
+            
+            elif item_type == 'vis_map':
+                # Handle visibility map from separate folder
+                if vis_maps_folder:
+                    if self._add_visibility_map(doc, csv_dive_number, dive_number, vis_maps_folder, progress_callback, figure_counter):
+                        figure_counter += 1
                 
             elif item_type == 'image':
                 # Look for matching image file (using folder name for file matching)
@@ -506,11 +672,11 @@ class ReportGenerator:
                             doc.add_picture(image_path, width=Inches(6))
                             
                             caption_para = doc.add_paragraph()
-                            caption_para.add_run(f"Figure A.{dive_number}.{figure_counter}. ").bold = True
+                            caption_para.add_run(f"Figure A{dive_number}.{figure_counter}. ").bold = True
                             caption_para.add_run(caption)
-                            caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            caption_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                            caption_para.paragraph_format.space_after = Pt(6)
                             
-                            doc.add_paragraph()
                             figure_counter += 1
                         except Exception as e:
                             if progress_callback:
@@ -586,7 +752,7 @@ class ReportGenerator:
     
     def generate_report(self, selected_dives: List[Dict], metadata_dict: Dict[str, Dict],
                        output_path: str, progress_callback: Optional[Callable] = None,
-                       map_folder: str = "") -> bool:
+                       map_folder: str = "", vis_maps_folder: str = "") -> bool:
         """
         Generate complete report for selected dives
         
@@ -596,6 +762,7 @@ class ReportGenerator:
             output_path: Full path for output file
             progress_callback: Optional callback for progress updates
             map_folder: Optional path to folder containing dive maps
+            vis_maps_folder: Optional path to folder containing visibility maps
             
         Returns:
             True if successful, False otherwise
@@ -642,12 +809,12 @@ class ReportGenerator:
                     categorized = finder.categorize_images(images)
                     
                     self.add_dive_section(doc, dive_info, metadata, images, categorized, 
-                                        progress_callback, map_folder)
+                                        progress_callback, map_folder, vis_maps_folder)
                 else:
                     if progress_callback:
                         progress_callback(f"  Warning: No Report_Plots folder for {dive_info['dive_name']}")
                     self.add_dive_section(doc, dive_info, metadata, [], None, 
-                                        progress_callback, map_folder)
+                                        progress_callback, map_folder, vis_maps_folder)
             
             # Save document
             doc.save(output_path)
