@@ -228,6 +228,7 @@ class MainGUI:
         self.map_folder_var = tk.StringVar(value="")
         self.vis_maps_folder_var = tk.StringVar(value="")
         self.output_folder_var = tk.StringVar(value=os.path.dirname(__file__))
+        self.split_by_dive_var = tk.BooleanVar(value=False)  # New variable for split mode
         
         self.metadata_cache = {}
         self.current_dives = {}
@@ -343,6 +344,16 @@ class MainGUI:
         
         ttk.Entry(output_entry_frame, textvariable=self.output_folder_var).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         ttk.Button(output_entry_frame, text="Browse", command=self.browse_output).pack(side=tk.LEFT)
+        
+        # Split mode checkbox
+        split_frame = ttk.Frame(output_frame)
+        split_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Checkbutton(split_frame, text="Split into separate files",
+                       variable=self.split_by_dive_var).pack(side=tk.LEFT)
+        
+        ttk.Label(split_frame, text="   ℹ <50mb size for Apps Script merge", 
+                 foreground="gray").pack(side=tk.LEFT)
         
         # Generate button
         self.generate_btn = ttk.Button(output_frame, text="Generate Report", 
@@ -542,9 +553,13 @@ class MainGUI:
         # Get vis maps folder (optional)
         vis_maps_folder = self.vis_maps_folder_var.get().strip()
         
+        # Get split mode setting
+        split_by_dive = self.split_by_dive_var.get()
+        
         try:
             log_progress(f"Generating report for {len(selected)} dives...")
             log_progress(f"Output: {output_path}")
+            log_progress(f"Mode: {'Split by dive' if split_by_dive else 'Single file'}")
             if map_folder:
                 log_progress(f"Map folder: {map_folder}")
             if vis_maps_folder:
@@ -557,13 +572,22 @@ class MainGUI:
                 output_path, 
                 log_progress,
                 map_folder=map_folder,
-                vis_maps_folder=vis_maps_folder
+                vis_maps_folder=vis_maps_folder,
+                split_by_dive=split_by_dive
             )
             
             if success:
                 log_progress("-" * 50)
-                log_progress("Report generated successfully!")
-                messagebox.showinfo("Success", f"Report generated:\n{output_path}")
+                if split_by_dive:
+                    log_progress("Report chunks generated successfully!")
+                    log_progress(f"\nNext steps:")
+                    log_progress("1. Open the Apps Script uploader")
+                    log_progress("2. Upload all DIVE###_*.docx files")
+                    log_progress("3. The script will convert and merge them")
+                    messagebox.showinfo("Success", f"Report chunks generated in:\n{output_folder}\n\nReady for Apps Script upload!")
+                else:
+                    log_progress("Report generated successfully!")
+                    messagebox.showinfo("Success", f"Report generated:\n{output_path}")
             else:
                 messagebox.showerror("Error", "Report generation failed")
                 

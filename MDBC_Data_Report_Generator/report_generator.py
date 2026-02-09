@@ -107,10 +107,30 @@ class ReportGenerator:
         Returns dict with dive names as keys
         """
         try:
-            # Read CSV: skip rows 0-2 (mission info, header, units), then set row 1 as header
-            # This makes row 2 (index 1) the header, and we skip row 3 (units)
-            df = pd.read_csv(csv_path, skiprows=[0, 2], header=0)
-            df.columns = df.columns.str.strip()
+            # Read CSV with multi-level headers (rows 1 and 2)
+            # Row 0 is summary, row 1 has main headers, row 2 has sub-headers
+            df = pd.read_csv(csv_path, skiprows=[0], header=[0, 1])
+            
+            # Flatten the multi-level columns
+            # Priority: use main header (level 0) unless it's generic/unnamed, then use sub-header (level 1)
+            new_columns = []
+            for col in df.columns:
+                main, sub = col[0], col[1]
+                main_str = str(main).strip() if pd.notna(main) else ''
+                sub_str = str(sub).strip() if pd.notna(sub) else ''
+                
+                # If main header is meaningful (not "Unnamed"), use it
+                # But for specific sub-headers we want, use those instead
+                if sub_str in ['Total Size (GB)', 'Image Size (GB)', 'LLS Size (GB)', 'Number of Images']:
+                    new_columns.append(sub_str)
+                elif main_str and not main_str.startswith('Unnamed'):
+                    new_columns.append(main_str)
+                elif sub_str and not sub_str.startswith('Unnamed'):
+                    new_columns.append(sub_str)
+                else:
+                    new_columns.append(f'{main_str}_{sub_str}' if main_str or sub_str else '')
+            
+            df.columns = new_columns
             
             dive_data = {}
             
@@ -155,7 +175,7 @@ class ReportGenerator:
         # Store the dive number from CSV for use in title
         # Check for various possible column names
         dive_col = None
-        for col_name in ['Dive', 'Dive ', 'Dive Number']:
+        for col_name in ['Dive', 'Dive ', 'Dive Number', 'Number']:
             if col_name in columns:
                 dive_col = col_name
                 break
@@ -167,16 +187,17 @@ class ReportGenerator:
         
         # Map CSV columns to report fields
         column_mapping = {
+            'Mission': 'Mission',
             'Vehicle': 'Vehicle',
             'Dive Type': 'Dive Type',
             'Dive Start': 'Start Time',
-            'Dive End ': 'End Time',  # Note: has trailing space in CSV
-            'Dive End': 'End Time',   # Also try without space
+            'Dive End': 'End Time',
             'Duration': 'Total Duration',
             'Actual': 'Linear Distance Covered',
             'Dive Narrative': 'Dive Narrative',
             'Operations Area': 'Operations Area',
-            'Survey Box': 'Survey Box'
+            'Survey Box': 'Survey Box',
+            'Total Size (GB)': 'Total Data Size'
         }
         
         for csv_col, report_field in column_mapping.items():
@@ -187,7 +208,7 @@ class ReportGenerator:
                 clean_data[report_field] = 'N/A'
         
         # Build start location from separate lat/lon columns
-        # "Location Start Position" is latitude, next unnamed column is longitude
+        # "Location Start Position" is latitude, next column (usually unnamed) is longitude
         lat = None
         lon = None
         
@@ -195,11 +216,23 @@ class ReportGenerator:
             lat = row['Location Start Position']
             lat = str(lat).strip() if not pd.isna(lat) and str(lat).strip() != '' else None
             
-            # Find the longitude column - it's the column after "Location Start Position"
-            col_list = list(columns)
-            lat_idx = col_list.index('Location Start Position')
-            if lat_idx + 1 < len(col_list):
-                lon_col = col_list[lat_idx + 1]
+            # Find longitude column by name pattern - check for explicit name first, then unnamed column
+            # Look for column that starts with "Unnamed" and comes after "Location Start Position"
+            lon_col = None
+            for col in columns:
+                # Check for explicit longitude column name
+                if 'longitude' in col.lower() and 'start' in col.lower():
+                    lon_col = col
+                    break
+                # Check for unnamed column pattern (pandas names them "Unnamed: N")
+                if col.startswith('Unnamed:') and 'Location Start Position' in columns:
+                    # Verify it's the one right after Location Start Position by checking column order
+                    col_list = list(columns)
+                    if col_list.index(col) == col_list.index('Location Start Position') + 1:
+                        lon_col = col
+                        break
+            
+            if lon_col:
                 lon = row[lon_col]
                 lon = str(lon).strip() if not pd.isna(lon) and str(lon).strip() != '' else None
         
@@ -232,7 +265,7 @@ class ReportGenerator:
         
         return clean_data
     
-    def create_document(self, title: str = "Dive Post-Mission Analysis") -> Document:
+    def create_document(self, title: str = "Dive Post-Mission Analysis", include_section3: bool = True) -> Document:
         """Create a new Word document with title"""
         doc = Document()
         
@@ -258,14 +291,20 @@ class ReportGenerator:
         heading2_font.size = Pt(14)
         heading2_font.color.rgb = RGBColor(0, 0, 0)  # Black
         
-        title_para = doc.add_heading('Appendix A: Dive Post-Mission Analysis', level=1)
-        title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        date_note = doc.add_paragraph()
-        date_note.add_run("Dates in the section headers are ranges taking into account the local or US Central Daylight Time (CDT) ")
-        date_note.add_run("and Universal Coordinated Time (UTC) that the dive was started as the \"dive day\". Date and times in the ")
-        date_note.add_run("main body represent the UTC for each dive. Each dive day goes over UTC midnight but is still part of ")
-        date_note.add_run("the local time dive day.")
+        if include_section3:
+            # Add Section 3 header for full report
+            title_para = doc.add_heading('Section 3: Dive Operations Summary', level=1)
+            title_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        else:
+            # Add Appendix header for chunk files
+            title_para = doc.add_heading('Appendix A: Dive Post-Mission Analysis', level=1)
+            title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            date_note = doc.add_paragraph()
+            date_note.add_run("Dates in the section headers are ranges taking into account the local or US Central Daylight Time (CDT) ")
+            date_note.add_run("and Universal Coordinated Time (UTC) that the dive was started as the \"dive day\". Date and times in the ")
+            date_note.add_run("main body represent the UTC for each dive. Each dive day goes over UTC midnight but is still part of ")
+            date_note.add_run("the local time dive day.")
         
         return doc
     
@@ -326,8 +365,8 @@ class ReportGenerator:
             self._add_ordered_content(doc, dive_name, csv_dive_number, dive_number, 
                                      report_plots_path, all_files, progress_callback, vis_maps_folder)
         
-        # Page break
-        doc.add_page_break()
+        # Add paragraph spacing between dives instead of page break
+        doc.add_paragraph()
     
     def _add_metadata_section(self, doc: Document, metadata: Dict):
         """Add metadata section to document"""
@@ -750,9 +789,438 @@ class ReportGenerator:
         # Return None if no match (exclude from report)
         return None
     
+    def add_section3_summary_table(self, doc: Document, selected_dives: List[Dict], 
+                                   metadata_dict: Dict[str, Dict], mission_name: str):
+        """Add Section 3 summary table with dive overview data"""
+        # Add introduction paragraph
+        intro = doc.add_paragraph()
+        intro.add_run("This section provides a brief overview of each dive conducted during the mission, "
+                     "including key operational parameters and data collection metrics.")
+        intro.paragraph_format.space_after = Pt(12)
+        
+        # Create summary table
+        # Headers: Mission, Dive, Location, Dive Type, Linear km, Data Qty, Voyis Runtime, 
+        #          LLS on Seafloor, L2 Qty, Image Quality, Comments
+        num_cols = 11
+        num_rows = len(selected_dives) + 1  # +1 for header
+        
+        table = doc.add_table(rows=num_rows, cols=num_cols)
+        table.style = 'Table Grid'
+        
+        # Set header row
+        headers = ['Mission', 'Dive', 'Location', 'Dive Type', 'Linear km', 
+                   'Data Qty (GB)', 'Voyis Runtime', 'LLS on Seafloor', 
+                   'L2 Qty (GB)', 'Image Quality', 'Comments']
+        
+        header_cells = table.rows[0].cells
+        for i, header in enumerate(headers):
+            cell = header_cells[i]
+            cell.text = header
+            # Bold header text
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.bold = True
+                    run.font.size = Pt(10)
+        
+        # Populate data rows
+        for idx, dive_info in enumerate(selected_dives, start=1):
+            row_cells = table.rows[idx].cells
+            dive_name = dive_info['dive_name']
+            metadata = metadata_dict.get(dive_name, {})
+            
+            # Try alternate key if not found (dive_name might be folder name, need CSV dive name)
+            if not metadata:
+                dive_num_only = dive_name.split('_')[0] if '_' in dive_name else dive_name
+                metadata = metadata_dict.get(dive_num_only, {})
+            
+            print(f"DEBUG Summary Table: dive_name='{dive_name}', metadata keys={list(metadata.keys())}, Mission={metadata.get('Mission', 'NOT FOUND')}")
+            
+            # Extract dive number (2 digits)
+            dive_num_str = ''.join(filter(str.isdigit, dive_name))
+            dive_num_2digit = dive_num_str.lstrip('0').zfill(2) if dive_num_str else str(idx).zfill(2)
+            
+            # Get linear distance in km
+            linear_dist = metadata.get('Linear Distance Covered', 'N/A')
+            if linear_dist != 'N/A' and linear_dist != '':
+                try:
+                    # Assume it's in meters, convert to km
+                    dist_val = float(str(linear_dist).replace(',', ''))
+                    linear_km = f"{dist_val / 1000:.2f}"
+                except:
+                    linear_km = linear_dist
+            else:
+                linear_km = 'N/A'
+            
+            # Get total data size
+            data_qty = metadata.get('Total Data Size', 'N/A')
+            if data_qty != 'N/A' and data_qty != '':
+                try:
+                    # Format the data size
+                    data_val = float(str(data_qty).replace(',', ''))
+                    data_qty = f"{data_val:.1f}"
+                except:
+                    pass  # Keep original value
+            
+            # Populate cells
+            row_cells[0].text = metadata.get('Mission', 'N/A')
+            row_cells[1].text = dive_num_2digit
+            row_cells[2].text = metadata.get('Operations Area', 'N/A')
+            row_cells[3].text = metadata.get('Dive Type', 'N/A')
+            row_cells[4].text = linear_km
+            row_cells[5].text = data_qty
+            row_cells[6].text = ''  # Placeholder for Voyis Runtime
+            row_cells[7].text = ''  # Placeholder for LLS on Seafloor
+            row_cells[8].text = ''  # Placeholder for L2 Qty
+            row_cells[9].text = ''  # Placeholder for Image Quality
+            row_cells[10].text = ''  # Placeholder for Comments
+            
+            print(f"  Row {idx}: Mission={metadata.get('Mission', 'N/A')}, Dive={dive_num_2digit}, Location={metadata.get('Operations Area', 'N/A')}, Type={metadata.get('Dive Type', 'N/A')}, km={linear_km}, GB={data_qty}")
+            
+            # Set font size for data cells
+            for cell in row_cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.size = Pt(9)
+        
+        doc.add_paragraph()  # Space after table
+    
+    def add_section3_dive_overview(self, doc: Document, dive_info: Dict, metadata: Dict,
+                                   section_number: str, figure_start: int,
+                                   map_folder: str = "",
+                                   progress_callback: Optional[Callable] = None):
+        """Add Section 3.X dive overview with metadata, map, highlights, and LLS placeholder"""
+        dive_name = dive_info['dive_name']
+        csv_dive_number = metadata.get('Dive Number', dive_name)
+        
+        # Section heading (e.g., "3.1 DIVE001")
+        heading_text = f"{section_number} {csv_dive_number}"
+        doc.add_heading(heading_text, level=2)
+        
+        # Metadata (subset for Section 3)
+        metadata_items = [
+            ('Dive Type', metadata.get('Dive Type', 'N/A')),
+            ('Start Time', metadata.get('Start Time', 'N/A')),
+            ('Start Location', metadata.get('Start Location', 'N/A')),
+            ('Total Duration', metadata.get('Total Duration', 'N/A')),
+            ('Linear Distance Covered', metadata.get('Linear Distance Covered', 'N/A')),
+        ]
+        
+        for label, value in metadata_items:
+            para = doc.add_paragraph()
+            para.add_run(f"{label}: ").bold = True
+            para.add_run(str(value) if value and value != 'N/A' else 'N/A')
+            para.paragraph_format.space_after = Pt(0)
+            para.paragraph_format.line_spacing = 1.0
+        
+        # Narrative
+        narrative = metadata.get('Dive Narrative', 'N/A')
+        narrative_para = doc.add_paragraph()
+        narrative_para.add_run("Dive Narrative: ").bold = True
+        narrative_para.add_run(str(narrative) if narrative and narrative != 'N/A' else 'N/A')
+        narrative_para.paragraph_format.space_after = Pt(12)
+        
+        figure_num = figure_start
+        
+        # Add main map
+        if map_folder and os.path.exists(map_folder):
+            dive_num_part = csv_dive_number.upper().replace('DIVE', '').strip()
+            map_filename_pattern = f"DIVE{dive_num_part}_map"
+            
+            map_file = None
+            for file in os.listdir(map_folder):
+                if map_filename_pattern.lower() in file.lower():
+                    map_file = os.path.join(map_folder, file)
+                    break
+            
+            if map_file:
+                try:
+                    doc.add_picture(map_file, width=Inches(6.0))
+                    caption_para = doc.add_paragraph()
+                    caption_para.add_run(f"Figure {figure_num}. ").bold = True
+                    caption_para.add_run(f"Map of the AUV path for {csv_dive_number}. "
+                                        f"The trackline of the AUV is shown in a thin black line. Altitude for "
+                                        f"acquired images is shown by color indicating too low (<4) in yellow, "
+                                        f"optimal altitude in orange, and too high (>8m) in violet. The start and "
+                                        f"end of the trackline are labeled.")
+                    caption_para.paragraph_format.space_after = Pt(12)
+                    figure_num += 1
+                except Exception as e:
+                    print(f"Error adding map for {csv_dive_number}: {e}")
+        
+        # Add highlight images
+        report_plots_path = dive_info.get('report_plots_path', '')
+        if report_plots_path and os.path.exists(report_plots_path):
+            # Look for top highlights image
+            highlight_file = None
+            for file in os.listdir(report_plots_path):
+                if 'top_highlights' in file.lower():
+                    highlight_file = os.path.join(report_plots_path, file)
+                    break
+            
+            if highlight_file:
+                try:
+                    doc.add_picture(highlight_file, width=Inches(6.0))
+                    caption_para = doc.add_paragraph()
+                    caption_para.add_run(f"Figure {figure_num}. ").bold = True
+                    caption_para.add_run(f"Example images from {csv_dive_number}. "
+                                        f"These images represent both highlights and a diversity of "
+                                        f"bottom types encountered on this dive.")
+                    caption_para.paragraph_format.space_after = Pt(12)
+                    figure_num += 1
+                except Exception as e:
+                    print(f"Error adding highlights for {csv_dive_number}: {e}")
+        
+        # Add LLS placeholder
+        placeholder_para = doc.add_paragraph()
+        placeholder_para.add_run("[LLS Point Cloud Overview Placeholder]").bold = True
+        placeholder_para.paragraph_format.space_after = Pt(6)
+        
+        caption_para = doc.add_paragraph()
+        caption_para.add_run(f"Figure {figure_num}. ").bold = True
+        caption_para.add_run(f"Example point cloud from {csv_dive_number}. "
+                            f"The point cloud represents some of the more prominent features of the dive.")
+        caption_para.paragraph_format.space_after = Pt(12)
+        
+        # Add spacing between dive overviews
+        doc.add_paragraph()
+    
+    
+    def generate_report_chunks(self, selected_dives: List[Dict], metadata_dict: Dict[str, Dict],
+                              output_folder: str, base_filename: str,
+                              progress_callback: Optional[Callable] = None,
+                              map_folder: str = "", vis_maps_folder: str = "") -> List[str]:
+        """
+        Generate report files broken into <50MB chunks:
+        - First chunk(s): Complete Section 3 for ALL dives
+        - Remaining chunks: Appendix A detailed analysis (3 dives per chunk)
+        
+        Args:
+            selected_dives: List of dive info dicts
+            metadata_dict: Dict mapping dive names to metadata
+            output_folder: Folder to save files in
+            base_filename: Base name for files
+            progress_callback: Optional callback for progress updates
+            map_folder: Optional path to folder containing dive maps
+            vis_maps_folder: Optional path to folder containing visibility maps
+            
+        Returns:
+            List of generated file paths
+        """
+        generated_files = []
+        
+        try:
+            # Extract mission name from first dive's metadata
+            mission_name = "Unknown Mission"
+            if selected_dives and len(selected_dives) > 0:
+                first_dive_name = selected_dives[0]['dive_name']
+                first_metadata = metadata_dict.get(first_dive_name, {})
+                mission_name = first_metadata.get('Mission', mission_name)
+            
+            MAX_FILE_SIZE_MB = 48  # Target 48MB to stay safely under 50MB limit
+            SECTION3_DIVES_PER_CHUNK = 6  # Section 3 summary - lighter weight
+            APPENDIX_DIVES_PER_CHUNK = 3  # Detailed analysis is extensive
+            
+            # ===== PART 1: Generate Section 3 chunk(s) (6 dives each) =====
+            if progress_callback:
+                progress_callback(f"Creating Section 3 chunks ({SECTION3_DIVES_PER_CHUNK} dives per chunk)...")
+            
+            # Group dives into chunks for Section 3
+            section3_chunks = []
+            for i in range(0, len(selected_dives), SECTION3_DIVES_PER_CHUNK):
+                section3_chunks.append(selected_dives[i:i + SECTION3_DIVES_PER_CHUNK])
+            
+            total_section3_chunks = len(section3_chunks)
+            
+            # Track figure counter across all Section 3 chunks for continuous numbering
+            global_figure_counter = 1
+            
+            for chunk_idx, dive_group in enumerate(section3_chunks, start=1):
+                # Create Section 3 document - only include section header in first chunk
+                section3_doc = self.create_document(include_section3=(chunk_idx == 1))
+                
+                # Add complete summary table ONLY in first chunk (shows all dives)
+                if chunk_idx == 1:
+                    self.add_section3_summary_table(section3_doc, selected_dives, metadata_dict, mission_name)
+                
+                # Add Section 3 dive overviews for this chunk
+                # Calculate starting dive index for this chunk
+                chunk_start_idx = (chunk_idx - 1) * SECTION3_DIVES_PER_CHUNK
+                
+                for local_idx, dive_info in enumerate(dive_group):
+                    dive_name = dive_info['dive_name']
+                    metadata = metadata_dict.get(dive_name, {})
+                    
+                    # Try variations if not found
+                    if not metadata:
+                        dive_num_only = dive_name.split('_')[0] if '_' in dive_name else dive_name
+                        metadata = metadata_dict.get(dive_num_only, {})
+                    
+                    if not metadata:
+                        metadata = {
+                            'Date': 'Date TBD',
+                            'Vehicle': 'N/A',
+                            'Operations Area': 'N/A',
+                            'Survey Box': 'N/A',
+                            'Dive Type': 'N/A',
+                            'Start Time': 'N/A',
+                            'End Time': 'N/A',
+                            'Start Location': 'N/A',
+                            'Total Duration': 'N/A',
+                            'Linear Distance Covered': 'N/A',
+                            'Dive Narrative': 'N/A',
+                            'Dive Number': dive_name
+                        }
+                    
+                    # Extract actual dive number for section numbering (DIVE003 -> 3)
+                    csv_dive_number = metadata.get('Dive Number', dive_name)
+                    dive_num_str = ''.join(filter(str.isdigit, csv_dive_number))
+                    actual_dive_num = int(dive_num_str) if dive_num_str else (chunk_start_idx + local_idx + 1)
+                    
+                    section_number = f"3.{actual_dive_num}"
+                    self.add_section3_dive_overview(section3_doc, dive_info, metadata, section_number, 
+                                                    global_figure_counter, map_folder, progress_callback)
+                    global_figure_counter += 3  # Each overview uses 3 figures (map, highlights, LLS placeholder)
+                
+                # Save Section 3 chunk
+                first_dive_num = ''.join(filter(str.isdigit, dive_group[0]['dive_name']))
+                last_dive_num = ''.join(filter(str.isdigit, dive_group[-1]['dive_name']))
+                if not first_dive_num:
+                    first_dive_num = f"{(chunk_idx - 1) * SECTION3_DIVES_PER_CHUNK + 1:03d}"
+                if not last_dive_num:
+                    last_dive_num = f"{(chunk_idx - 1) * SECTION3_DIVES_PER_CHUNK + len(dive_group):03d}"
+                
+                if len(dive_group) == 1:
+                    section3_filename = f"{base_filename}_Section3_DIVE{first_dive_num}_{chunk_idx}.docx"
+                else:
+                    section3_filename = f"{base_filename}_Section3_DIVE{first_dive_num}-DIVE{last_dive_num}_{chunk_idx}.docx"
+                
+                section3_path = os.path.join(output_folder, section3_filename)
+                section3_doc.save(section3_path)
+                
+                file_size_mb = os.path.getsize(section3_path) / (1024 * 1024)
+                generated_files.append(section3_path)
+                
+                if progress_callback:
+                    size_status = "⚠️ OVER LIMIT" if file_size_mb > 50 else "✓"
+                    progress_callback(f"  {size_status} Saved: {section3_filename} ({file_size_mb:.1f} MB, {len(dive_group)} dives)")
+                
+                if file_size_mb > MAX_FILE_SIZE_MB:
+                    if progress_callback:
+                        progress_callback(f"  ⚠️ Warning: Section 3 chunk exceeds {MAX_FILE_SIZE_MB}MB target.")
+            
+            # ===== PART 2: Generate Appendix A chunks (3 dives each) =====
+            if progress_callback:
+                progress_callback(f"\nCreating Appendix A chunks ({APPENDIX_DIVES_PER_CHUNK} dives per chunk)...")
+            
+            # Group dives into chunks for Appendix A
+            appendix_chunks = []
+            for i in range(0, len(selected_dives), APPENDIX_DIVES_PER_CHUNK):
+                appendix_chunks.append(selected_dives[i:i + APPENDIX_DIVES_PER_CHUNK])
+            
+            total_appendix_chunks = len(appendix_chunks)
+            
+            for chunk_idx, dive_group in enumerate(appendix_chunks, start=1):
+                # Extract dive numbers from first and last dive in group
+                first_dive = dive_group[0]['dive_name']
+                last_dive = dive_group[-1]['dive_name']
+                
+                first_num = ''.join(filter(str.isdigit, first_dive))
+                last_num = ''.join(filter(str.isdigit, last_dive))
+                
+                if not first_num:
+                    first_num = f"{(chunk_idx - 1) * APPENDIX_DIVES_PER_CHUNK + 1:03d}"
+                if not last_num:
+                    last_num = f"{(chunk_idx - 1) * APPENDIX_DIVES_PER_CHUNK + len(dive_group):03d}"
+                
+                # Build filename
+                if len(dive_group) == 1:
+                    chunk_filename = f"{base_filename}_AppendixA_DIVE{first_num}_{chunk_idx}.docx"
+                    chunk_label = f"DIVE{first_num}"
+                else:
+                    chunk_filename = f"{base_filename}_AppendixA_DIVE{first_num}-DIVE{last_num}_{chunk_idx}.docx"
+                    chunk_label = f"DIVE{first_num}-DIVE{last_num}"
+                
+                if progress_callback:
+                    progress_callback(f"Creating Appendix A chunk {chunk_idx}/{total_appendix_chunks}: {chunk_label}...")
+                
+                # Create document with Appendix A header
+                doc = self.create_document(include_section3=False)
+                
+                # Process each dive in this chunk for detailed Appendix A sections
+                for dive_idx, dive_info in enumerate(dive_group):
+                    # Get metadata with flexible matching
+                    dive_name = dive_info['dive_name']
+                    metadata = metadata_dict.get(dive_name, {})
+                    
+                    # Try variations if not found
+                    if not metadata:
+                        dive_num_only = dive_name.split('_')[0] if '_' in dive_name else dive_name
+                        metadata = metadata_dict.get(dive_num_only, {})
+                    
+                    if not metadata:
+                        if progress_callback:
+                            progress_callback(f"  Warning: No metadata found for {dive_name}")
+                        metadata = {
+                            'Date': 'Date TBD',
+                            'Vehicle': 'N/A',
+                            'Operations Area': 'N/A',
+                            'Survey Box': 'N/A',
+                            'Dive Type': 'N/A',
+                            'Start Time': 'N/A',
+                            'End Time': 'N/A',
+                            'Start Location': 'N/A',
+                            'Total Duration': 'N/A',
+                            'Linear Distance Covered': 'N/A',
+                            'Dive Narrative': 'N/A'
+                        }
+                    
+                    # Get images
+                    images = []
+                    if dive_info.get('report_plots_path'):
+                        from dive_finder import DiveFinder
+                        finder = DiveFinder()
+                        images = finder.get_images_from_report_plots(dive_info['report_plots_path'])
+                        categorized = finder.categorize_images(images)
+                        
+                        self.add_dive_section(doc, dive_info, metadata, images, categorized, 
+                                            progress_callback, map_folder, vis_maps_folder)
+                    else:
+                        if progress_callback:
+                            progress_callback(f"  Warning: No Report_Plots folder for {dive_info['dive_name']}")
+                        self.add_dive_section(doc, dive_info, metadata, [], None, 
+                                            progress_callback, map_folder, vis_maps_folder)
+                
+                # Save this Appendix A chunk
+                chunk_path = os.path.join(output_folder, chunk_filename)
+                doc.save(chunk_path)
+                
+                # Calculate file size and check if we exceeded limit
+                file_size_mb = os.path.getsize(chunk_path) / (1024 * 1024)
+                generated_files.append(chunk_path)
+                
+                if progress_callback:
+                    size_status = "⚠️ OVER LIMIT" if file_size_mb > 50 else "✓"
+                    progress_callback(f"  {size_status} Saved: {chunk_filename} ({file_size_mb:.1f} MB, {len(dive_group)} dives)")
+                
+                # If file is over 50MB, warn user
+                if file_size_mb > MAX_FILE_SIZE_MB:
+                    if progress_callback:
+                        progress_callback(f"  ⚠️ Warning: File exceeds {MAX_FILE_SIZE_MB}MB target. Consider reducing dives per chunk.")
+            
+            if progress_callback:
+                progress_callback(f"\n✓ Generated {len(generated_files)} total chunks ({len(section3_chunks)} Section 3 + {len(appendix_chunks)} Appendix A)")
+            
+            return generated_files
+            
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f"Error generating report chunks: {e}")
+            return []
+    
     def generate_report(self, selected_dives: List[Dict], metadata_dict: Dict[str, Dict],
                        output_path: str, progress_callback: Optional[Callable] = None,
-                       map_folder: str = "", vis_maps_folder: str = "") -> bool:
+                       map_folder: str = "", vis_maps_folder: str = "",
+                       split_by_dive: bool = False) -> bool:
         """
         Generate complete report for selected dives
         
@@ -763,16 +1231,90 @@ class ReportGenerator:
             progress_callback: Optional callback for progress updates
             map_folder: Optional path to folder containing dive maps
             vis_maps_folder: Optional path to folder containing visibility maps
+            split_by_dive: If True, generate one file per dive for Apps Script merging
             
         Returns:
             True if successful, False otherwise
         """
         try:
-            doc = self.create_document()
+            # If split mode, use generate_report_chunks instead
+            if split_by_dive:
+                output_folder = os.path.dirname(output_path)
+                base_filename = os.path.splitext(os.path.basename(output_path))[0]
+                
+                chunks = self.generate_report_chunks(
+                    selected_dives, metadata_dict, output_folder, base_filename,
+                    progress_callback, map_folder, vis_maps_folder
+                )
+                
+                return len(chunks) > 0
             
+            # Original single-file mode
+            doc = self.create_document(include_section3=True)
+            
+            # Add Section 3: Dive Operations Summary
+            if progress_callback:
+                progress_callback("Creating Section 3: Dive Operations Summary...")
+            
+            # Extract mission name from first dive's metadata
+            mission_name = "Unknown Mission"  # Default fallback
+            if selected_dives and len(selected_dives) > 0:
+                first_dive_name = selected_dives[0]['dive_name']
+                first_metadata = metadata_dict.get(first_dive_name, {})
+                mission_name = first_metadata.get('Mission', mission_name)
+            
+            # Add summary table
+            self.add_section3_summary_table(doc, selected_dives, metadata_dict, mission_name)
+            
+            # Add Section 3.X for each dive (overview)
+            figure_counter = 1
+            for idx, dive_info in enumerate(selected_dives, 1):
+                section_number = f"3.{idx}"
+                dive_name = dive_info['dive_name']
+                metadata = metadata_dict.get(dive_name, {})
+                
+                # Try variations if not found
+                if not metadata:
+                    dive_num_only = dive_name.split('_')[0] if '_' in dive_name else dive_name
+                    metadata = metadata_dict.get(dive_num_only, {})
+                
+                if not metadata:
+                    metadata = {
+                        'Date': 'Date TBD',
+                        'Vehicle': 'N/A',
+                        'Operations Area': 'N/A',
+                        'Survey Box': 'N/A',
+                        'Dive Type': 'N/A',
+                        'Start Time': 'N/A',
+                        'End Time': 'N/A',
+                        'Start Location': 'N/A',
+                        'Total Duration': 'N/A',
+                        'Linear Distance Covered': 'N/A',
+                        'Dive Narrative': 'N/A'
+                    }
+                
+                if progress_callback:
+                    progress_callback(f"Adding Section {section_number} overview for {dive_name}...")
+                
+                self.add_section3_dive_overview(doc, dive_info, metadata, section_number, 
+                                               figure_counter, map_folder, progress_callback)
+                figure_counter += 3  # Each dive uses 3 figures (map, highlights, LLS)
+            
+            # Add Appendix A header
+            doc.add_page_break()
+            title_para = doc.add_heading('Appendix A: Dive Post-Mission Analysis', level=1)
+            title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            date_note = doc.add_paragraph()
+            date_note.add_run("Dates in the section headers are ranges taking into account the local or US Central Daylight Time (CDT) ")
+            date_note.add_run("and Universal Coordinated Time (UTC) that the dive was started as the \\\"dive day\\\". Date and times in the ")
+            date_note.add_run("main body represent the UTC for each dive. Each dive day goes over UTC midnight but is still part of ")
+            date_note.add_run("the local time dive day.")
+            
+            # Add Appendix A content (detailed analysis for each dive)
             for idx, dive_info in enumerate(selected_dives, 1):
                 if progress_callback:
-                    progress_callback(f"Processing {dive_info['dive_name']} ({idx}/{len(selected_dives)})...")
+                    progress_callback(f"Processing Appendix A for {dive_info['dive_name']} ({idx}/{len(selected_dives)})...")
                 
                 # Get metadata with flexible matching
                 dive_name = dive_info['dive_name']
