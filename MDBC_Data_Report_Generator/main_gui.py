@@ -219,14 +219,15 @@ class MainGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Dive Report Generator - Enhanced")
-        self.root.geometry("1100x700")
+        self.root.geometry("1200x750")
+        self.root.minsize(900, 600)
         
         self.dive_finder = DiveFinder()
         self.report_generator = ReportGenerator()
         
         self.csv_file_var = tk.StringVar(value="C:\\Users\\Mike.Bollinger\\Downloads\\EN2501_AUV_Mission_Log_IMAGING_LASER - Mission_Overview.csv")
         self.map_folder_var = tk.StringVar(value="")
-        self.vis_maps_folder_var = tk.StringVar(value="")
+        self.vis_maps_folder_var = tk.StringVar(value="C:\\Users\\Mike.Bollinger\\Documents\\ArcGIS\\Projects\\MDBC\\EN-25-01\\Image-LLS VisMapExports")
         self.output_folder_var = tk.StringVar(value=os.path.dirname(__file__))
         self.split_by_dive_var = tk.BooleanVar(value=False)  # New variable for split mode
         
@@ -243,7 +244,8 @@ class MainGUI:
         main_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Left panel container with scrollbar
-        left_container = ttk.Frame(main_container)
+        left_container = ttk.Frame(main_container, width=420)
+        left_container.pack_propagate(False)
         main_container.add(left_container, weight=1)
         
         # Create canvas and scrollbar for left panel
@@ -271,7 +273,7 @@ class MainGUI:
         
         # Right panel (preview)
         right_panel = ttk.Frame(main_container)
-        main_container.add(right_panel, weight=1)
+        main_container.add(right_panel, weight=2)
         
         # Setup left panel content in scrollable frame
         self.setup_left_panel(self.scrollable_left_frame)
@@ -298,8 +300,8 @@ class MainGUI:
         ttk.Button(csv_entry_frame, text="Browse", command=self.browse_csv).pack(side=tk.LEFT)
         ttk.Button(csv_entry_frame, text="Load", command=self.load_metadata).pack(side=tk.LEFT, padx=(5, 0))
         
-        # Map Folder section (optional)
-        map_frame = ttk.LabelFrame(parent, text="Dive Maps Folder (Optional)", padding=10)
+        # Map Folder section (Section 3 - altitude maps)
+        map_frame = ttk.LabelFrame(parent, text="Section 3 Maps - Altitude (Optional)", padding=10)
         map_frame.pack(fill=tk.X, padx=5, pady=5)
         
         map_entry_frame = ttk.Frame(map_frame)
@@ -308,8 +310,8 @@ class MainGUI:
         ttk.Entry(map_entry_frame, textvariable=self.map_folder_var).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         ttk.Button(map_entry_frame, text="Browse", command=self.browse_map_folder).pack(side=tk.LEFT)
         
-        # Visibility Maps Folder section (optional)
-        vis_maps_frame = ttk.LabelFrame(parent, text="Visibility Maps Folder (Optional)", padding=10)
+        # Visibility Maps Folder section (Appendix A - replaces altitude map)
+        vis_maps_frame = ttk.LabelFrame(parent, text="Appendix A Maps - Visibility (Optional)", padding=10)
         vis_maps_frame.pack(fill=tk.X, padx=5, pady=5)
         
         vis_maps_entry_frame = ttk.Frame(vis_maps_frame)

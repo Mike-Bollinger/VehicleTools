@@ -23,7 +23,7 @@ class ReportGenerator:
         # Order matters - these define the sequence plots appear in the report
         self.caption_mapping = {
             # Navigation and Motion Analysis
-            'nav_motion_analysis': 'Plots showing summaries of AUV navigation and attitude data for {dive_name}. Plots show heave, pitch and roll by geographic coordinates (Row 1), by time (Row 2) and by counts (Row 3). Row 4 shows crab angle and geographic coordinates by depth (m). Vehicle axes of orientation are pitch positive=nose down, roll positive=starboard, heave positive = up.',
+            'nav_motion_analysis': 'Plots showing summaries of AUV navigation and attitude data for {dive_name}. Plots showing summaries of AUV navigation and attitude data for DIVE002. Plots show heave, pitch and roll by geographic coordinates (Row 1), by time (Row 2) and by counts (Row 3). Row 4 shows vehicle crab angle (°), and geographic coordinates by depth (m). Vehicle axes of orientation are pitch positive=nose down, roll positive=starboard, heave positive = up.',
             
             # Image Summary Section
             'image_top_highlights': 'Example images from {dive_name}.',
@@ -36,12 +36,18 @@ class ReportGenerator:
             'image_visibility_analysis': 'Results from the visibility analysis for {dive_name}. Example images are what the model considered the best example from each category.',
             
             # LLS Section
-            'lls_auv_dive_profile': 'Plot showing AUV dive profile in Blue, seafloor in black, and overlaid good and bad data from the laser scan based on agreement between AUV echo sounder and laser scan depth measurements.',
+            'lls_auv_dive_profile': 'Plot showing AUV dive profile (dashed line), overlaid with indicators of good (green) and bad (orange) data from the laser scan (note dashed line may not be visible when indicators are shown) , based on agreement between AUV echo sounder and laser scan depth measurements. The seafloor is represented by a solid black line. ',
             'lls_auv_position': 'AUV track and laser scan coverage where green denotes good laser scan data reaching the seafloor, and red areas are where the laser scan did not reach the seafloor.',
             'lls_auv_depth_vs_intensity': 'Laser intensity values for scans that reach the seafloor, shown as a histogram and as intensity vs depth.',
             'lls_auv_position_depth_color': 'Map of good data colored based on water depth. The black line shows the complete AUV track.',
             'lls_auv_position_depth_deviation_color': 'Map showing bottom deviations from a spatially averaged depth across 5m. Red positive values indicate emergent objects such as boulders and reefs, and blue negative values indicate dropoffs or low points in the seafloor. The black line shows the complete AUV track.',
             'lls_auv_position_intensity_color': 'Map showing the return laser reflectance intensity for good data. Large values are associated with strong returns in good water clarity, or objects with high reflectance such as hard bottom and low values indicate poor visibility or low reflectance from the seafloor. The black line shows the complete AUV track.',
+
+            # Maps added programmatically (not matched by filename)
+            'altitude_map': 'Map of the AUV path for {dive_name}. The location of the dive site relative to key bottom features is shown by the red extent indicator on the inset map. Altitude for acquired images is shown by color indicating too low (<4) in yellow, optimal altitude in orange, and too high (>8m) in violet. When no images were taken, the trackline of the AUV is shown as a black line. The start and end of the trackline are labeled. Depth isobaths are shown in meters.',
+            'visibility_map': 'Map of the AUV path for {dive_name}. The location of the dive site relative to key bottom features is shown by the red extent indicator on the inset map. Visibility analysis based on a machine learning model is shown by color with dark green circles indicating "excellent visibility," light green circles indicating "good visibility," yellow circles indicating "fair visibility," orange circles indicating "poor visibility," and red circles indicating "zero visibility." Not all visibility categories are found on every dive. When no images were taken, the trackline of the AUV is shown as a black line. The start and end of the trackline are labeled. Depth isobaths are shown in meters.',
+            'section3_highlights': 'Example images from {dive_name}. These images represent both highlights and a diversity of bottom types encountered on this dive.',
+            'lls_placeholder': 'Example point cloud from {dive_name}. The point cloud represents some of the more prominent features of the dive.'
         }
         
         # Metrics files to include as tables (without figures/captions)
@@ -121,7 +127,8 @@ class ReportGenerator:
                 
                 # If main header is meaningful (not "Unnamed"), use it
                 # But for specific sub-headers we want, use those instead
-                if sub_str in ['Total Size (GB)', 'Image Size (GB)', 'LLS Size (GB)', 'Number of Images']:
+                if sub_str in ['Total Size (GB)', 'Image Size (GB)', 'LLS Size (GB)', 'Number of Images',
+                               'Lat DD', 'Long DD']:
                     new_columns.append(sub_str)
                 elif main_str and not main_str.startswith('Unnamed'):
                     new_columns.append(main_str)
@@ -194,6 +201,7 @@ class ReportGenerator:
             'Dive End': 'End Time',
             'Duration': 'Total Duration',
             'Actual': 'Linear Distance Covered',
+            'Usable Images': 'Percentage of Usable Images',
             'Dive Narrative': 'Dive Narrative',
             'Operations Area': 'Operations Area',
             'Survey Box': 'Survey Box',
@@ -207,37 +215,34 @@ class ReportGenerator:
             else:
                 clean_data[report_field] = 'N/A'
         
-        # Build start location from separate lat/lon columns
-        # "Location Start Position" is latitude, next column (usually unnamed) is longitude
-        lat = None
-        lon = None
-        
-        if 'Location Start Position' in columns:
-            lat = row['Location Start Position']
-            lat = str(lat).strip() if not pd.isna(lat) and str(lat).strip() != '' else None
-            
-            # Find longitude column by name pattern - check for explicit name first, then unnamed column
-            # Look for column that starts with "Unnamed" and comes after "Location Start Position"
-            lon_col = None
-            for col in columns:
-                # Check for explicit longitude column name
-                if 'longitude' in col.lower() and 'start' in col.lower():
-                    lon_col = col
-                    break
-                # Check for unnamed column pattern (pandas names them "Unnamed: N")
-                if col.startswith('Unnamed:') and 'Location Start Position' in columns:
-                    # Verify it's the one right after Location Start Position by checking column order
-                    col_list = list(columns)
-                    if col_list.index(col) == col_list.index('Location Start Position') + 1:
-                        lon_col = col
-                        break
-            
-            if lon_col:
-                lon = row[lon_col]
-                lon = str(lon).strip() if not pd.isna(lon) and str(lon).strip() != '' else None
-        
-        if lat and lon:
-            clean_data['Start Location'] = f"{lat}, {lon}"
+        # Build start location from Lat DD / Long DD decimal-degree columns
+        lat_dd = None
+        lon_dd = None
+
+        for col_name in ['Lat DD', 'lat dd', 'LAT DD', 'Latitude DD', 'Lat_DD']:
+            if col_name in columns:
+                val = row[col_name]
+                if not pd.isna(val) and str(val).strip() not in ('', 'N/A'):
+                    try:
+                        lat_dd = float(str(val).strip())
+                    except (ValueError, TypeError):
+                        pass
+                break
+
+        for col_name in ['Long DD', 'long dd', 'LONG DD', 'Longitude DD', 'Lon DD', 'Long_DD']:
+            if col_name in columns:
+                val = row[col_name]
+                if not pd.isna(val) and str(val).strip() not in ('', 'N/A'):
+                    try:
+                        lon_dd = float(str(val).strip())
+                    except (ValueError, TypeError):
+                        pass
+                break
+
+        if lat_dd is not None and lon_dd is not None:
+            lat_dir = 'N' if lat_dd >= 0 else 'S'
+            lon_dir = 'W' if lon_dd <= 0 else 'E'
+            clean_data['Start Location'] = f"{abs(lat_dd):.6f}\u00b0{lat_dir}, {abs(lon_dd):.6f}\u00b0{lon_dir}"
         else:
             clean_data['Start Location'] = 'N/A'
         
@@ -341,10 +346,10 @@ class ReportGenerator:
         # Metadata
         self._add_metadata_section(doc, metadata)
         
-        # Add map after dive narrative (if available)
-        if map_folder:
-            self._add_dive_map(doc, csv_dive_number, dive_number, 
-                              map_folder, progress_callback)
+        # Add visibility map as Figure A#.1 in Appendix A (altitude map is Section 3 only)
+        if vis_maps_folder:
+            self._add_visibility_map(doc, csv_dive_number, dive_number,
+                                     vis_maps_folder, progress_callback, figure_number=1)
         
         # Build file index for quick lookup
         all_files = {}
@@ -370,29 +375,43 @@ class ReportGenerator:
     
     def _add_metadata_section(self, doc: Document, metadata: Dict):
         """Add metadata section to document"""
+        # Format distance in km
+        raw_dist = metadata.get('Linear Distance Covered', 'N/A')
+        if raw_dist not in ('N/A', '', None):
+            try:
+                dist_display = f"{float(str(raw_dist).replace(',', '')) / 1000:.1f}km"
+            except (ValueError, TypeError):
+                dist_display = str(raw_dist)
+        else:
+            dist_display = 'N/A'
+
         metadata_items = [
-            ('Vehicle', metadata.get('Vehicle', 'N/A')),
-            ('Operations Area', metadata.get('Operations Area', 'N/A')),
-            ('Survey Box', metadata.get('Survey Box', 'N/A')),
             ('Dive Type', metadata.get('Dive Type', 'N/A')),
             ('Start Time', metadata.get('Start Time', 'N/A')),
-            ('End Time', metadata.get('End Time', 'N/A')),
             ('Start Location', metadata.get('Start Location', 'N/A')),
             ('Total Duration', metadata.get('Total Duration', 'N/A')),
-            ('Linear Distance Covered', metadata.get('Linear Distance Covered', 'N/A')),
+            ('Distance Covered', dist_display),
+            ('Percentage of Usable Images', metadata.get('Percentage of Usable Images', 'N/A')),
         ]
         
         for label, value in metadata_items:
             para = doc.add_paragraph()
-            para.add_run(f"{label}: ").bold = True
-            para.add_run(str(value) if not pd.isna(value) and value != '' and value != 'N/A' else 'N/A')
+            para.add_run(f"{label}: ")
+            # Format percentage field with % suffix if it's a number
+            if label == 'Percentage of Usable Images' and value not in ('N/A', '', None):
+                try:
+                    para.add_run(f"{float(str(value).replace('%','').strip()):.1f}%")
+                except (ValueError, TypeError):
+                    para.add_run(str(value))
+            else:
+                para.add_run(str(value) if not pd.isna(value) and value != '' and value != 'N/A' else 'N/A')
             para.paragraph_format.space_after = Pt(0)
             para.paragraph_format.line_spacing = 1.0
         
         # Narrative
         narrative = metadata.get('Dive Narrative', 'N/A')
         narrative_para = doc.add_paragraph()
-        narrative_para.add_run("Dive Narrative: ").bold = True
+        narrative_para.add_run("Dive Narrative: ")
         narrative_para.add_run(str(narrative) if not pd.isna(narrative) and narrative != '' and narrative != 'N/A' else 'N/A')
         narrative_para.paragraph_format.space_after = Pt(0)
         narrative_para.paragraph_format.line_spacing = 1.0
@@ -438,15 +457,10 @@ class ReportGenerator:
             doc.add_picture(map_file, width=Inches(6.0))
             
             # Add caption
-            caption_text = (f"Map of the AUV path for {csv_dive_number}. "
-                          f"The trackline of the AUV is shown in a thin black line. Altitude for "
-                          f"acquired images is shown by color indicating too low (<4) in yellow, "
-                          f"optimal altitude in orange, and too high (>8m) in violet. The start and "
-                          f"end of the trackline are labeled, and predefined ground truthing points "
-                          f"are shown as standalone green circles.")
+            caption_text = self.caption_mapping['altitude_map'].format(dive_name=csv_dive_number)
             
             caption_para = doc.add_paragraph()
-            caption_para.add_run(f"Figure A{dive_number}.1. ").bold = True
+            caption_para.add_run(f"Figure A{dive_number}.1. ")
             caption_para.add_run(caption_text)
             caption_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
             caption_para.paragraph_format.space_after = Pt(6)
@@ -513,14 +527,10 @@ class ReportGenerator:
             doc.add_picture(vis_map_file, width=Inches(6))
             
             # Add caption
-            caption_text = (f"Machine learning visibility analysis map for {csv_dive_number}. "
-                          f"Visibility is binned into categories excellent (dark green), good (light green), "
-                          f"fair (yellow), poor (orange), and zero (red). The trackline of the AUV is shown "
-                          f"in a thin black line. The start and end of the trackline are labeled. Any visibility "
-                          f"of the thin black line without colored points indicates images were not taken at that location.")
+            caption_text = self.caption_mapping['visibility_map'].format(dive_name=csv_dive_number)
             
             caption_para = doc.add_paragraph()
-            caption_para.add_run(f"Figure A{dive_number}.{figure_number}. ").bold = True
+            caption_para.add_run(f"Figure A{dive_number}.{figure_number}. ")
             caption_para.add_run(caption_text)
             caption_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
             caption_para.paragraph_format.space_after = Pt(6)
@@ -662,8 +672,7 @@ class ReportGenerator:
             
             # Visibility Section
             ('visibility_analysis', 'heading', 'Visibility Analysis'),
-            ('visibility_map', 'vis_map', None),
-            ('image_visibility_analysis', 'image', None),
+            ('image_visibility_analysis', 'image', None),  # vis map is already Figure A#.1 at top
             
             # LLS Section
             ('lls_analysis', 'heading', 'Laser Line Scan Analysis'),
@@ -711,7 +720,7 @@ class ReportGenerator:
                             doc.add_picture(image_path, width=Inches(6))
                             
                             caption_para = doc.add_paragraph()
-                            caption_para.add_run(f"Figure A{dive_number}.{figure_counter}. ").bold = True
+                            caption_para.add_run(f"Figure A{dive_number}.{figure_counter}. ")
                             caption_para.add_run(caption)
                             caption_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
                             caption_para.paragraph_format.space_after = Pt(6)
@@ -759,7 +768,7 @@ class ReportGenerator:
                     doc.add_picture(image_path, width=Inches(6))
                     
                     caption_para = doc.add_paragraph()
-                    caption_para.add_run(f"Figure A.{dive_number}.{figure_counter}. ").bold = True
+                    caption_para.add_run(f"Figure A.{dive_number}.{figure_counter}. ")
                     caption_para.add_run(caption)
                     caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     
@@ -799,18 +808,20 @@ class ReportGenerator:
         intro.paragraph_format.space_after = Pt(12)
         
         # Create summary table
-        # Headers: Mission, Dive, Location, Dive Type, Linear km, Data Qty, Voyis Runtime, 
-        #          LLS on Seafloor, L2 Qty, Image Quality, Comments
-        num_cols = 11
+        # Headers: Mission ID, Dive #, Start Date-Time (UTC), Location, Dive Type, Linear Kilometers,
+        #          Data Quantity (images GB /LLS GB), Voyis Percent of Dive Runtime,
+        #          LLS Percent of Data on Seafloor, L2 Data Quantity (LLS GB), Image Quality (%), Comments
+        num_cols = 12
         num_rows = len(selected_dives) + 1  # +1 for header
         
         table = doc.add_table(rows=num_rows, cols=num_cols)
         table.style = 'Table Grid'
         
         # Set header row
-        headers = ['Mission', 'Dive', 'Location', 'Dive Type', 'Linear km', 
-                   'Data Qty (GB)', 'Voyis Runtime', 'LLS on Seafloor', 
-                   'L2 Qty (GB)', 'Image Quality', 'Comments']
+        headers = ['Mission ID', 'Dive #', 'Start Date-Time (UTC)', 'Location', 'Dive Type',
+                   'Linear Kilometers', 'Data Quantity (images GB /LLS GB)',
+                   'Voyis Percent of Dive Runtime', 'LLS Percent of Data on Seafloor',
+                   'L2 Data Quantity (LLS GB)', 'Image Quality (%)', 'Comments']
         
         header_cells = table.rows[0].cells
         for i, header in enumerate(headers):
@@ -861,18 +872,31 @@ class ReportGenerator:
                 except:
                     pass  # Keep original value
             
+            # Format start date-time as MM/DD/YYYY HH:MM
+            start_time_raw = metadata.get('Start Time', 'N/A')
+            start_datetime = start_time_raw if start_time_raw not in ('N/A', '', None) else 'N/A'
+
             # Populate cells
             row_cells[0].text = metadata.get('Mission', 'N/A')
             row_cells[1].text = dive_num_2digit
-            row_cells[2].text = metadata.get('Operations Area', 'N/A')
-            row_cells[3].text = metadata.get('Dive Type', 'N/A')
-            row_cells[4].text = linear_km
-            row_cells[5].text = data_qty
-            row_cells[6].text = ''  # Placeholder for Voyis Runtime
-            row_cells[7].text = ''  # Placeholder for LLS on Seafloor
-            row_cells[8].text = ''  # Placeholder for L2 Qty
-            row_cells[9].text = ''  # Placeholder for Image Quality
-            row_cells[10].text = ''  # Placeholder for Comments
+            row_cells[2].text = start_datetime
+            row_cells[3].text = metadata.get('Operations Area', 'N/A')
+            row_cells[4].text = metadata.get('Dive Type', 'N/A')
+            row_cells[5].text = linear_km
+            row_cells[6].text = data_qty
+            row_cells[7].text = ''  # Placeholder for Voyis Percent of Dive Runtime
+            row_cells[8].text = ''  # Placeholder for LLS Percent of Data on Seafloor
+            row_cells[9].text = ''  # Placeholder for L2 Data Quantity
+            # Populate Usable Images (%)
+            usable_pct = metadata.get('Percentage of Usable Images', 'N/A')
+            if usable_pct not in ('N/A', '', None):
+                try:
+                    row_cells[10].text = f"{float(str(usable_pct).replace('%', '').strip()):.1f}"
+                except (ValueError, TypeError):
+                    row_cells[10].text = str(usable_pct)
+            else:
+                row_cells[10].text = ''
+            row_cells[11].text = ''  # Placeholder for Comments
             
             print(f"  Row {idx}: Mission={metadata.get('Mission', 'N/A')}, Dive={dive_num_2digit}, Location={metadata.get('Operations Area', 'N/A')}, Type={metadata.get('Dive Type', 'N/A')}, km={linear_km}, GB={data_qty}")
             
@@ -896,26 +920,42 @@ class ReportGenerator:
         heading_text = f"{section_number} {csv_dive_number}"
         doc.add_heading(heading_text, level=2)
         
-        # Metadata (subset for Section 3)
+        # Metadata (mirrors Appendix A)
+        raw_dist = metadata.get('Linear Distance Covered', 'N/A')
+        if raw_dist not in ('N/A', '', None):
+            try:
+                dist_display = f"{float(str(raw_dist).replace(',', '')) / 1000:.1f}km"
+            except (ValueError, TypeError):
+                dist_display = str(raw_dist)
+        else:
+            dist_display = 'N/A'
+
         metadata_items = [
             ('Dive Type', metadata.get('Dive Type', 'N/A')),
             ('Start Time', metadata.get('Start Time', 'N/A')),
             ('Start Location', metadata.get('Start Location', 'N/A')),
             ('Total Duration', metadata.get('Total Duration', 'N/A')),
-            ('Linear Distance Covered', metadata.get('Linear Distance Covered', 'N/A')),
+            ('Distance Covered', dist_display),
+            ('Percentage of Usable Images', metadata.get('Percentage of Usable Images', 'N/A')),
         ]
         
         for label, value in metadata_items:
             para = doc.add_paragraph()
-            para.add_run(f"{label}: ").bold = True
-            para.add_run(str(value) if value and value != 'N/A' else 'N/A')
+            para.add_run(f"{label}: ")
+            if label == 'Percentage of Usable Images' and value not in ('N/A', '', None):
+                try:
+                    para.add_run(f"{float(str(value).replace('%', '').strip()):.1f}%")
+                except (ValueError, TypeError):
+                    para.add_run(str(value))
+            else:
+                para.add_run(str(value) if value and value != 'N/A' else 'N/A')
             para.paragraph_format.space_after = Pt(0)
             para.paragraph_format.line_spacing = 1.0
         
         # Narrative
         narrative = metadata.get('Dive Narrative', 'N/A')
         narrative_para = doc.add_paragraph()
-        narrative_para.add_run("Dive Narrative: ").bold = True
+        narrative_para.add_run("Dive Narrative: ")
         narrative_para.add_run(str(narrative) if narrative and narrative != 'N/A' else 'N/A')
         narrative_para.paragraph_format.space_after = Pt(12)
         
@@ -936,12 +976,8 @@ class ReportGenerator:
                 try:
                     doc.add_picture(map_file, width=Inches(6.0))
                     caption_para = doc.add_paragraph()
-                    caption_para.add_run(f"Figure {figure_num}. ").bold = True
-                    caption_para.add_run(f"Map of the AUV path for {csv_dive_number}. "
-                                        f"The trackline of the AUV is shown in a thin black line. Altitude for "
-                                        f"acquired images is shown by color indicating too low (<4) in yellow, "
-                                        f"optimal altitude in orange, and too high (>8m) in violet. The start and "
-                                        f"end of the trackline are labeled.")
+                    caption_para.add_run(f"Figure {figure_num}. ")
+                    caption_para.add_run(self.caption_mapping['altitude_map'].format(dive_name=csv_dive_number))
                     caption_para.paragraph_format.space_after = Pt(12)
                     figure_num += 1
                 except Exception as e:
@@ -961,10 +997,8 @@ class ReportGenerator:
                 try:
                     doc.add_picture(highlight_file, width=Inches(6.0))
                     caption_para = doc.add_paragraph()
-                    caption_para.add_run(f"Figure {figure_num}. ").bold = True
-                    caption_para.add_run(f"Example images from {csv_dive_number}. "
-                                        f"These images represent both highlights and a diversity of "
-                                        f"bottom types encountered on this dive.")
+                    caption_para.add_run(f"Figure {figure_num}. ")
+                    caption_para.add_run(self.caption_mapping['section3_highlights'].format(dive_name=csv_dive_number))
                     caption_para.paragraph_format.space_after = Pt(12)
                     figure_num += 1
                 except Exception as e:
@@ -976,9 +1010,8 @@ class ReportGenerator:
         placeholder_para.paragraph_format.space_after = Pt(6)
         
         caption_para = doc.add_paragraph()
-        caption_para.add_run(f"Figure {figure_num}. ").bold = True
-        caption_para.add_run(f"Example point cloud from {csv_dive_number}. "
-                            f"The point cloud represents some of the more prominent features of the dive.")
+        caption_para.add_run(f"Figure {figure_num}. ")
+        caption_para.add_run(self.caption_mapping['lls_placeholder'].format(dive_name=csv_dive_number))
         caption_para.paragraph_format.space_after = Pt(12)
         
         # Add spacing between dive overviews

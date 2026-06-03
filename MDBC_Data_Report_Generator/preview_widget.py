@@ -18,9 +18,9 @@ class PreviewWidget(ttk.Frame):
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
         
-        # 8.5 x 11 inch aspect ratio
-        self.page_width = 850  # pixels (scaled down)
-        self.page_height = 1100  # pixels (scaled down)
+        # 8.5 x 11 inch aspect ratio (scaled for laptop screens)
+        self.page_width = 580  # pixels (scaled down)
+        self.page_height = 1000  # pixels (scaled down)
         self.dpi_scale = 100  # 100 pixels per inch for display
         
         self.current_dive = None
@@ -122,22 +122,42 @@ class PreviewWidget(ttk.Frame):
         y_pos += 40
         
         # Metadata section
+        raw_dist = self.current_metadata.get('Linear Distance Covered', 'N/A')
+        if raw_dist not in ('N/A', '', None):
+            try:
+                dist_display = f"{float(str(raw_dist).replace(',', '')) / 1000:.1f}km"
+            except (ValueError, TypeError):
+                dist_display = str(raw_dist)
+        else:
+            dist_display = 'N/A'
+
+        raw_pct = self.current_metadata.get('Percentage of Usable Images', 'N/A')
+        if raw_pct not in ('N/A', '', None):
+            try:
+                pct_display = f"{float(str(raw_pct).replace('%', '').strip()):.1f}%"
+            except (ValueError, TypeError):
+                pct_display = str(raw_pct)
+        else:
+            pct_display = 'N/A'
+
         metadata_items = [
-            ('Vehicle', self.current_metadata.get('Vehicle', 'N/A')),
-            ('Operations Area', self.current_metadata.get('Operations Area', 'N/A')),
-            ('Survey Box', self.current_metadata.get('Survey Box', 'N/A')),
             ('Dive Type', self.current_metadata.get('Dive Type', 'N/A')),
             ('Start Time', self.current_metadata.get('Start Time', 'N/A')),
-            ('End Time', self.current_metadata.get('End Time', 'N/A')),
             ('Start Location', self.current_metadata.get('Start Location', 'N/A')),
             ('Total Duration', self.current_metadata.get('Total Duration', 'N/A')),
-            ('Linear Distance', self.current_metadata.get('Linear Distance Covered', 'N/A')),
+            ('Distance Covered', dist_display),
+            ('Usable Images', pct_display),
         ]
         
         for label, value in metadata_items:
-            text = f"{label}: {value}"
+            # Bold label, normal value
             self.canvas.create_text(margin, y_pos,
-                                   text=text,
+                                   text=f"{label}: ",
+                                   font=("Arial", 9, "bold"),
+                                   anchor=tk.W)
+            label_width = len(label) * 6 + 16  # approximate bold label pixel width
+            self.canvas.create_text(margin + label_width, y_pos,
+                                   text=str(value),
                                    font=("Arial", 9),
                                    anchor=tk.W)
             y_pos += 18
@@ -341,20 +361,15 @@ class PreviewWidget(ttk.Frame):
         return None
     
     def _find_vis_map_file(self, csv_dive_number: str) -> Optional[str]:
-        """Find visibility map file for the dive"""
+        """Find visibility map file for the dive - matches any file containing DIVE### in filename"""
         if not hasattr(self, 'vis_maps_folder') or not self.vis_maps_folder or not os.path.exists(self.vis_maps_folder):
             return None
         
-        # Extract dive number from csv_dive_number (e.g., DIVE021 -> 021)
         dive_num_part = csv_dive_number.upper().replace('DIVE', '').strip()
+        dive_pattern = f"DIVE{dive_num_part}"
         
-        # Build expected vis map filename pattern: DIVE###_Visibility
-        vis_map_filename_pattern = f"DIVE{dive_num_part}_Visibility"
-        
-        # Search for vis map file
         for file in os.listdir(self.vis_maps_folder):
-            file_base = os.path.splitext(file)[0]
-            if file_base.upper() == vis_map_filename_pattern.upper():
+            if dive_pattern.upper() in file.upper():
                 if file.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')):
                     return os.path.join(self.vis_maps_folder, file)
         

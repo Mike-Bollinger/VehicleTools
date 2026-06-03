@@ -1,8 +1,64 @@
-# Dive Report Generator - Enhanced Version
+# Dive Report Generator
 
 ## Overview
 
 This enhanced version of the Dive Report Generator provides a modern, modular interface for creating professional Word document reports from AUV dive data. It includes a preview pane for quality control, flexible data source management, and smart dive number matching across multiple locations.
+
+## Pre-Processing Prerequisites
+
+Before running this tool, the following data preparation steps must be completed for each dive. The report generator assembles these outputs — it does not produce them itself.
+
+### 1. Export Mission Log CSV
+
+Export the AUV Mission Log from the Google Sheet as a CSV file:
+
+- Open the mission Google Sheet (e.g., `EN2501_AUV_Mission_Log_IMAGING_LASER`)
+- Go to **File → Download → Comma Separated Values (.csv)**
+- Save the `Mission_Overview` tab as a `.csv` file
+- This CSV drives all dive metadata in the report (vehicle, times, locations, narrative, usable images %, etc.)
+
+### 2. Run VOYIS First Look Metrics
+
+Run the [VOYIS First Look Metrics](https://github.com/Mike-Bollinger/VOYIS_FirstLookMetrics) script for each dive. This generates the `Report_Plots/` folder and associated metrics files that the report generator reads.
+
+Run all three processing modes:
+
+| Mode | Key Outputs |
+|------|-------------|
+| **Navigation** | `*_Nav_Motion_Analysis.png` — AUV heave, pitch, roll, and track plots |
+| **All Images** | `*_Image_Top_Highlights.png`, `*_Image_Altitude_Histogram.png`, `*_Image_Overall_Overlap_Map.png`, `*_Image_Visibility_Analysis.png`, all `*_metrics.txt` and `*_overlap_metrics.txt` files |
+| **LLS** | `*_LLS_AUV_Dive_Profile.png`, `*_LLS_AUV_Position.png`, `*_LLS_AUV_Depth_vs_Intensity.png`, `*_LLS_AUV_Position_Depth_Color.png`, `*_LLS_AUV_Position_Depth_Deviation_Color.png`, `*_LLS_AUV_Position_Intensity_Color.png`, and `*_LLS_Voyis_QuickLook_Summary.txt` |
+
+All outputs should be placed inside the dive folder at:
+```
+DIVE###/
+└── Report_Plots/
+    ├── DIVE###_Nav_Motion_Analysis.png
+    ├── DIVE###_Image_Altitude_Histogram.png
+    ├── DIVE###_LLS_AUV_Dive_Profile.png
+    ├── DIVE###_LLS_Voyis_QuickLook_Summary.txt
+    └── ...
+```
+
+### 3. Create Altitude Dive Maps (Section 3)
+
+Create an altitude-based map for each dive using ArcGIS or equivalent GIS software:
+
+- Map should show the AUV trackline colored by altitude, with bathymetric isobaths and an inset location map
+- Export each map as an image named with the pattern `DIVE###_map.*` (e.g., `DIVE002_map.png`)
+- Place all altitude maps in a single folder — selected via **"Section 3 Maps - Altitude"** in the GUI
+- These maps appear in Section 3 (Dive Overview) of the report
+
+### 4. Create Visibility Maps (Appendix A)
+
+Create a visibility-classified map for each dive using ArcGIS or equivalent GIS software:
+
+- Map should show AUV trackline points color-coded by visibility category (excellent / good / fair / poor / zero) from the ML-based visibility analysis, with bathymetric isobaths and an inset location map
+- Export each map as an image with `DIVE###` anywhere in the filename (e.g., `DIVE002_vismap.png`)
+- Place all visibility maps in a single folder — selected via **"Appendix A Maps - Visibility"** in the GUI
+- These maps appear as **Figure A#.1** at the start of each Appendix A dive section
+
+---
 
 ## Features
 
@@ -97,8 +153,7 @@ MDBC_Data_Report_Generator/
 ├── report_generator.py       # Word document generation
 ├── preview_widget.py         # Preview pane component
 ├── requirements.txt          # Python dependencies
-├── README_NEW.md            # This file
-└── MDBC_Data_Report_Generator.py  # Original monolithic version (kept for reference)
+└── README.md                 # This file
 ```
 
 ## Module Descriptions
@@ -161,21 +216,41 @@ Customize plot captions in `report_generator.py` starting at line ~18 in the `ca
 
 ### Expected Folder Structure
 
+**Data source folders** (added via "Add Folder" in the GUI):
 ```
 DataSource/
 ├── DIVE001/
 │   ├── Report_Plots/
-│   │   ├── DIVE001_map.png
+│   │   ├── DIVE001_Nav_Motion_Analysis.png
+│   │   ├── DIVE001_Image_Top_Highlights.png
 │   │   ├── DIVE001_Image_Altitude_Histogram.png
-│   │   ├── DIVE001_LLS_AUV_Position.png
+│   │   ├── DIVE001_Image_Overall_Overlap_Map.png
+│   │   ├── DIVE001_Image_Visibility_Analysis.png
 │   │   ├── DIVE001_LLS_AUV_Dive_Profile.png
-│   │   └── ...
-│   ├── products/
-│   │   ├── lls_stats.txt  (optional, for LLS statistics table)
+│   │   ├── DIVE001_LLS_AUV_Position.png
+│   │   ├── DIVE001_LLS_Voyis_QuickLook_Summary.txt
+│   │   ├── DIVE001_image_metrics.txt
+│   │   ├── DIVE001_image_overall_overlap_metrics.txt
 │   │   └── ...
 │   └── [other dive data]
 ├── DIVE002/
 │   └── Report_Plots/
+└── ...
+```
+
+**Altitude maps folder** (Section 3 — selected via "Section 3 Maps - Altitude" in the GUI):
+```
+AltitudeMapsFolder/
+├── DIVE001_map.png
+├── DIVE002_map.png
+└── ...
+```
+
+**Visibility maps folder** (Appendix A — selected via "Appendix A Maps - Visibility" in the GUI):
+```
+VisMapExports/
+├── DIVE001_vismap.png
+├── DIVE002_vismap.png
 └── ...
 ```
 
@@ -275,6 +350,12 @@ generator.generate_report(dives, metadata, "output.docx")
 ```
 
 ## Version History
+
+### Version 2.1 (June 2026)
+- Added Usable Images (%) to Section 3 summary table and Appendix A dive descriptors
+- Dual-map architecture: altitude maps in Section 3, visibility maps as Figure A#.1 in Appendix A
+- Removed deprecated monolithic script and orphaned setup files
+- Updated dependencies (python-docx >=1.1.0, pandas >=2.0.3, Pillow >=10.0.0)
 
 ### Version 2.0 (December 2025)
 - Complete modular rewrite
