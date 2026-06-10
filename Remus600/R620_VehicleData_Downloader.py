@@ -35,7 +35,10 @@ from tkinter import filedialog, messagebox, ttk
 # Add/update your two AUVs here. You can rename the keys (e.g., "Remus 1", "Remus 2").
 # Use "sources" to define all endpoints to pull from for a selected vehicle.
 # Example: NAS + Sensor each with its own host/login/path list.
-# remote_paths can include file paths and/or directory paths.
+# remote_paths can include file paths, directory paths, or selector objects.
+# Selector object examples:
+#   {"path": "/home/remus/phins_logs", "selection": "latest_day_files"}
+#   {"path": "/home/remus/remus_bags", "selection": "latest_day_folder"}
 # Example file path: "/data/logs/mission01/nav.log"
 # Example directory path: "/data/logs/mission01/"
 VEHICLE_CONFIGS: dict[str, dict] = {
@@ -59,6 +62,18 @@ VEHICLE_CONFIGS: dict[str, dict] = {
                     "/home/remus/logs/phins_std.log",
                     "/home/remus/logs/remus.log",
                     "/home/remus/missions/mission.rmf",
+                ],
+            },
+            {
+                "label": "Kraken",
+                "host": "192.168.20.17",
+                "port": 22,
+                "username": "kraken",
+                "password": "Kraken",
+                "remote_paths": [
+                    "/kraken/receiver/RTSAS.xml",
+                    "/kraken/receiver/RTSAS.ini",
+                    "/kraken/receiver/RTSAS.log",
                 ],
             },
         ],
@@ -92,8 +107,10 @@ VEHICLE_CONFIGS: dict[str, dict] = {
                 "username": "remus",
                 "password": "whoi-remus",
                 "remote_paths": [
-                    "/path/to/sensor/file_or_dir_1",
-                    "/path/to/sensor/file_or_dir_2",
+                    "/home/remus/profiles.yaml",
+                    "/home/remus/voyis_params.yaml",
+                    {"path": "/home/remus/phins_logs", "selection": "latest_day_files"},
+                    {"path": "/home/remus/remus_bags", "selection": "latest_day_folder"},
                 ],
             },
         ],
@@ -140,6 +157,25 @@ def format_size(num_bytes: int) -> str:
     if unit == "B":
         return f"{int(size)} {unit}"
     return f"{size:.2f} {unit}"
+
+
+def extract_date_token(text: str) -> str | None:
+    """Extract YYYY-MM-DD token from a filename/path segment."""
+    match = re.search(r"(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)", text)
+    return match.group(1) if match else None
+
+
+def extract_datetime_sort_key(text: str) -> tuple:
+    """Build sortable key from embedded date/time like 2026-06-08_01-34-14."""
+    match = re.search(r"(?<!\d)(\d{4}-\d{2}-\d{2})(?:[_-](\d{2})-(\d{2})-(\d{2}))?", text)
+    if not match:
+        return ("", "00", "00", "00", text)
+
+    date_part = match.group(1)
+    hh = match.group(2) or "00"
+    mm = match.group(3) or "00"
+    ss = match.group(4) or "00"
+    return (date_part, hh, mm, ss, text)
 
 
 class R620VehicleDataDownloaderApp:
@@ -593,12 +629,24 @@ class R620VehicleDataDownloaderApp:
         ]
         return any(marker in text for marker in markers)
 
-    def _expand_remote_target(self, sftp, target: str) -> list[str]:
-        target = target.strip()
+    def _expand_remote_target(self, sftp, target) -> list[str]:
+        selection_mode = ""
+        if isinstance(target, dict):
+            selection_mode = str(target.get("selection", "")).strip().lower()
+            target = str(target.get("path", "")).strip()
+        else:
+            target = str(target).strip()
+
         if not target:
             return []
 
         normalized = posixpath.normpath(target)
+
+        if selection_mode == "latest_day_files":
+            return self._expand_latest_day_files(sftp, normalized)
+
+        if selection_mode == "latest_day_folder":
+            return self._expand_latest_day_folder(sftp, normalized)
 
         if self._is_remote_file(sftp, normalized):
             return [normalized]
@@ -607,6 +655,99 @@ class R620VehicleDataDownloaderApp:
             return self._walk_remote_dir(sftp, normalized)
 
         return []
+
+    def _expand_latest_day_files(self, sftp, remote_dir: str) -> list[str]:
+        """Select all regular files whose names share the most recent date token."""
+        try:
+            entries = sftp.listdir_attr(remote_dir)
+        except Exception:
+            return []
+
+        dated_files = []
+        for entry in entries:
+            if not stat.S_ISREG(entry.st_mode):
+                continue
+            date_token = extract_date_token(entry.filename)
+            if not date_token:
+                continue
+            dated_files.append((date_token, entry.filename))
+
+        if not dated_files:
+            return []
+
+        latest_date = max(date for date, _ in dated_files)
+        selected = [
+            posixpath.normpath(posixpath.join(remote_dir, name))
+            for date, name in dated_files
+            if date == latest_date
+        ]
+        selected.sort()
+        self.ui_queue.put(
+            {
+                "type": "log",
+                "text": (
+                    f"Selector latest_day_files chose date {latest_date} "
+                    f"in {remote_dir} ({len(selected)} files)."
+                ),
+            }
+        )
+        return selected
+
+    def _expand_latest_day_folder(self, sftp, remote_dir: str) -> list[str]:
+        """Select all dated folders from newest date and expand all files within them."""
+        try:
+            entries = sftp.listdir_attr(remote_dir)
+        except Exception:
+            return []
+
+        dated_entries = []
+        for entry in entries:
+            date_token = extract_date_token(entry.filename)
+            if not date_token:
+                continue
+            dated_entries.append((date_token, entry))
+
+        if not dated_entries:
+            return []
+
+        # Prefer dated folders over loose files so we always pull companion files
+        # that live alongside the bag in the same folder.
+        dated_dirs = [(date, entry) for date, entry in dated_entries if stat.S_ISDIR(entry.st_mode)]
+        if dated_dirs:
+            latest_date = max(date for date, _ in dated_dirs)
+            same_day_dirs = [entry for date, entry in dated_dirs if date == latest_date]
+            same_day_files = []
+        else:
+            latest_date = max(date for date, _ in dated_entries)
+            same_day_entries = [entry for date, entry in dated_entries if date == latest_date]
+            same_day_dirs = []
+            same_day_files = [entry for entry in same_day_entries if stat.S_ISREG(entry.st_mode)]
+
+        # Sort by embedded date/time token to keep output deterministic.
+        same_day_dirs.sort(key=lambda e: extract_datetime_sort_key(e.filename))
+        same_day_files.sort(key=lambda e: extract_datetime_sort_key(e.filename))
+
+        selected_files: list[str] = []
+        if same_day_dirs:
+            for entry in same_day_dirs:
+                selected_path = posixpath.normpath(posixpath.join(remote_dir, entry.filename))
+                selected_files.extend(self._walk_remote_dir(sftp, selected_path))
+        else:
+            # Fallback for non-directory datasets: include same-day files.
+            for entry in same_day_files:
+                selected_files.append(posixpath.normpath(posixpath.join(remote_dir, entry.filename)))
+
+        self.ui_queue.put(
+            {
+                "type": "log",
+                "text": (
+                    f"Selector latest_day_folder chose date {latest_date} in {remote_dir} "
+                    f"({len(same_day_dirs)} folder(s), {len(selected_files)} file(s))."
+                ),
+            }
+        )
+
+        return selected_files
 
     def _walk_remote_dir(self, sftp, remote_dir: str) -> list[str]:
         files: list[str] = []
