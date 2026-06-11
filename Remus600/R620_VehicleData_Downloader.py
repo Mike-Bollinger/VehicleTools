@@ -4,8 +4,9 @@ R620_VehicleData_Downloader
 What this does:
 - Connects to one of multiple AUV SFTP endpoints.
 - Downloads configured files/directories from the SFTP server.
-- Flattens the output so all files go into one local folder.
-- Prefixes each file with: <MissionName>_<DiveName>_
+- Flattens most files into one local folder, but preserves bag folder structure
+  for paths expanded with "latest_day_folder" (e.g. remus_bag_YYYY-MM-DD_HH-MM-SS/).
+- Prefixes each file/folder with: <MissionName>_<DiveName>_
 - Shows transfer progress in a GUI.
 
 Configuration notes:
@@ -405,11 +406,16 @@ class R620VehicleDataDownloaderApp:
                         )
                         continue
 
-                    all_files = []
+                    all_files: list[tuple[str, str]] = []
                     for target in remote_targets:
                         all_files.extend(self._expand_remote_target(sftp, target))
 
-                    unique_files = sorted(set(all_files))
+                    # Dedupe by remote path, preserving the anchor for each path.
+                    seen_paths: dict[str, str] = {}
+                    for path, anchor in all_files:
+                        if path not in seen_paths:
+                            seen_paths[path] = anchor
+                    unique_files = sorted(seen_paths.items())
                     if not unique_files:
                         self.ui_queue.put(
                             {
@@ -420,7 +426,7 @@ class R620VehicleDataDownloaderApp:
                         continue
 
                     source_plans.append((source, unique_files))
-                    source_bytes = sum(max(self._remote_size(sftp, p), 0) for p in unique_files)
+                    source_bytes = sum(max(self._remote_size(sftp, p), 0) for p, _ in unique_files)
                     bytes_total += source_bytes
 
                     self.ui_queue.put(
@@ -490,7 +496,7 @@ class R620VehicleDataDownloaderApp:
                         }
                     )
 
-                    for remote_file in remote_files:
+                    for remote_file, anchor in remote_files:
                         try:
                             retry_count = 0
                             while True:
@@ -501,6 +507,7 @@ class R620VehicleDataDownloaderApp:
                                         output_dir,
                                         prefix,
                                         source_label,
+                                        anchor=anchor,
                                     )
                                     break
                                 except Exception as download_exc:
@@ -629,7 +636,7 @@ class R620VehicleDataDownloaderApp:
         ]
         return any(marker in text for marker in markers)
 
-    def _expand_remote_target(self, sftp, target) -> list[str]:
+    def _expand_remote_target(self, sftp, target) -> list[tuple[str, str]]:
         selection_mode = ""
         if isinstance(target, dict):
             selection_mode = str(target.get("selection", "")).strip().lower()
@@ -649,14 +656,14 @@ class R620VehicleDataDownloaderApp:
             return self._expand_latest_day_folder(sftp, normalized)
 
         if self._is_remote_file(sftp, normalized):
-            return [normalized]
+            return [(normalized, "")]
 
         if self._is_remote_dir(sftp, normalized):
             return self._walk_remote_dir(sftp, normalized)
 
         return []
 
-    def _expand_latest_day_files(self, sftp, remote_dir: str) -> list[str]:
+    def _expand_latest_day_files(self, sftp, remote_dir: str) -> list[tuple[str, str]]:
         """Select all regular files whose names share the most recent date token."""
         try:
             entries = sftp.listdir_attr(remote_dir)
@@ -677,7 +684,7 @@ class R620VehicleDataDownloaderApp:
 
         latest_date = max(date for date, _ in dated_files)
         selected = [
-            posixpath.normpath(posixpath.join(remote_dir, name))
+            (posixpath.normpath(posixpath.join(remote_dir, name)), "")
             for date, name in dated_files
             if date == latest_date
         ]
@@ -693,7 +700,7 @@ class R620VehicleDataDownloaderApp:
         )
         return selected
 
-    def _expand_latest_day_folder(self, sftp, remote_dir: str) -> list[str]:
+    def _expand_latest_day_folder(self, sftp, remote_dir: str) -> list[tuple[str, str]]:
         """Select all dated folders from newest date and expand all files within them."""
         try:
             entries = sftp.listdir_attr(remote_dir)
@@ -727,15 +734,16 @@ class R620VehicleDataDownloaderApp:
         same_day_dirs.sort(key=lambda e: extract_datetime_sort_key(e.filename))
         same_day_files.sort(key=lambda e: extract_datetime_sort_key(e.filename))
 
-        selected_files: list[str] = []
+        selected_files: list[tuple[str, str]] = []
         if same_day_dirs:
             for entry in same_day_dirs:
                 selected_path = posixpath.normpath(posixpath.join(remote_dir, entry.filename))
-                selected_files.extend(self._walk_remote_dir(sftp, selected_path))
+                # Use selected_path as anchor so files are placed inside a named subfolder.
+                selected_files.extend(self._walk_remote_dir(sftp, selected_path, anchor=selected_path))
         else:
-            # Fallback for non-directory datasets: include same-day files.
+            # Fallback for non-directory datasets: include same-day files (flat, no anchor).
             for entry in same_day_files:
-                selected_files.append(posixpath.normpath(posixpath.join(remote_dir, entry.filename)))
+                selected_files.append((posixpath.normpath(posixpath.join(remote_dir, entry.filename)), ""))
 
         self.ui_queue.put(
             {
@@ -749,8 +757,8 @@ class R620VehicleDataDownloaderApp:
 
         return selected_files
 
-    def _walk_remote_dir(self, sftp, remote_dir: str) -> list[str]:
-        files: list[str] = []
+    def _walk_remote_dir(self, sftp, remote_dir: str, anchor: str = "") -> list[tuple[str, str]]:
+        files: list[tuple[str, str]] = []
         try:
             entries = sftp.listdir_attr(remote_dir)
         except Exception:
@@ -765,9 +773,9 @@ class R620VehicleDataDownloaderApp:
             child = posixpath.normpath(child)
 
             if stat.S_ISREG(entry.st_mode):
-                files.append(child)
+                files.append((child, anchor))
             elif stat.S_ISDIR(entry.st_mode):
-                files.extend(self._walk_remote_dir(sftp, child))
+                files.extend(self._walk_remote_dir(sftp, child, anchor=anchor))
 
         return files
 
@@ -796,16 +804,26 @@ class R620VehicleDataDownloaderApp:
         output_dir: str,
         prefix: str,
         source_label: str,
+        anchor: str = "",
     ) -> bool:
-        src_name = posixpath.basename(remote_file)
-        local_name = f"{prefix}_{src_name}"
-        local_path = os.path.join(output_dir, local_name)
+        if anchor:
+            # Preserve the bag folder structure: files land in <prefix>_<bag_folder_name>/...
+            bag_folder_name = posixpath.basename(anchor)
+            rel_path = posixpath.relpath(remote_file, anchor)  # e.g. "file.bag" or "sub/file"
+            rel_parts = rel_path.split("/")
+            local_subdir = os.path.join(output_dir, f"{prefix}_{bag_folder_name}", *rel_parts[:-1])
+            local_name = rel_parts[-1]
+        else:
+            local_subdir = output_dir
+            local_name = f"{prefix}_{posixpath.basename(remote_file)}"
+
+        local_path = os.path.join(local_subdir, local_name)
         remote_size, remote_mtime = self._remote_file_info(sftp, remote_file)
 
         if os.path.exists(local_path):
             action, resolved_path = self._resolve_conflict_action(
                 local_path,
-                output_dir,
+                local_subdir,
                 local_name,
                 remote_size,
                 remote_mtime,
@@ -822,6 +840,7 @@ class R620VehicleDataDownloaderApp:
                 return False
             local_path = resolved_path
 
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
         temp_path = local_path + ".part"
 
         file_size = max(remote_size, 0)
