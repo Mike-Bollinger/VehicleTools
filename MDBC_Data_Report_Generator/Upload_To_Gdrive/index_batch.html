@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #1a73e8;
+            margin-top: 0;
+            border-bottom: 3px solid #1a73e8;
+            padding-bottom: 10px;
+        }
+        
+        h2 {
+            color: #333;
+            margin-top: 30px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .step-number {
+            background: #1a73e8;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        
+        .upload-zone {
+            border: 3px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            background: #fafafa;
+            margin: 20px 0;
+            transition: all 0.3s;
+        }
+        
+        .upload-zone:hover {
+            border-color: #1a73e8;
+            background: #f0f7ff;
+        }
+        
+        .upload-zone.drag-over {
+            border-color: #1a73e8;
+            background: #e8f4ff;
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .btn {
+            background: #1a73e8;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover:not(:disabled) {
+            background: #1557b0;
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background: #5f6368;
+        }
+        
+        .btn-secondary:hover:not(:disabled) {
+            background: #3c4043;
+        }
+        
+        .btn-success {
+            background: #188038;
+        }
+        
+        .btn-success:hover:not(:disabled) {
+            background: #0d652d;
+        }
+        
+        .btn-warning {
+            background: #f9ab00;
+        }
+        
+        .btn-warning:hover:not(:disabled) {
+            background: #e37400;
+        }
+        
+        .status-box {
+            background: #e8f4ff;
+            border-left: 4px solid #1a73e8;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .status-box.active {
+            display: block;
+        }
+        
+        .status-box.success {
+            background: #e6f4ea;
+            border-color: #188038;
+        }
+        
+        .status-box.error {
+            background: #fce8e6;
+            border-color: #d93025;
+        }
+        
+        .status-box.warning {
+            background: #fef7e0;
+            border-color: #f9ab00;
+        }
+        
+        .file-list {
+            list-style: none;
+            padding: 0;
+            margin: 15px 0;
+        }
+        
+        .file-list li {
+            padding: 8px;
+            background: #f8f9fa;
+            margin: 5px 0;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #1a73e8, #4285f4);
+            width: 0%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .folder-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        
+        .info-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+        
+        .workflow-steps {
+            display: flex;
+            justify-content: space-between;
+            margin: 30px 0;
+            position: relative;
+        }
+        
+        .workflow-step {
+            flex: 1;
+            text-align: center;
+            position: relative;
+        }
+        
+        .workflow-step::after {
+            content: '';
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            width: 100%;
+            height: 2px;
+            background: #ddd;
+            z-index: -1;
+        }
+        
+        .workflow-step:last-child::after {
+            display: none;
+        }
+        
+        .workflow-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #ddd;
+            color: #666;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+        
+        .workflow-step.active .workflow-icon {
+            background: #1a73e8;
+            color: white;
+        }
+        
+        .workflow-step.complete .workflow-icon {
+            background: #188038;
+            color: white;
+        }
+        
+        .link-button {
+            color: #1a73e8;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        
+        .link-button:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📦 Batch Upload & Merge - Split Reports</h1>
+        
+        <div class="info-box">
+            <strong>⚡ How it works:</strong> Upload all your DIVE###_*.docx chunks → Convert to Google Docs → Merge into one document.<br>
+            Manual checkpoints ensure we don't hit the 6-minute timeout!
+        </div>
+        
+        <!-- Workflow Status -->
+        <div class="workflow-steps" id="workflow-steps">
+            <div class="workflow-step" id="step-upload">
+                <div class="workflow-icon">📤</div>
+                <div>Upload</div>
+            </div>
+            <div class="workflow-step" id="step-convert">
+                <div class="workflow-icon">🔄</div>
+                <div>Convert</div>
+            </div>
+            <div class="workflow-step" id="step-merge">
+                <div class="workflow-icon">🔗</div>
+                <div>Merge</div>
+            </div>
+            <div class="workflow-step" id="step-complete">
+                <div class="workflow-icon">✅</div>
+                <div>Complete</div>
+            </div>
+        </div>
+        
+        <!-- Step 1: Upload Files -->
+        <h2><span class="step-number">1</span>Upload .docx Chunks</h2>
+        
+        <label for="folder-id">Google Drive Folder (optional):</label>
+        <input type="text" id="folder-id" class="folder-input" placeholder="Paste folder URL or ID here (leave blank for My Drive root)">
+        
+        <div class="upload-zone" id="upload-zone">
+            <p style="font-size: 24px; margin: 0;">📁</p>
+            <p><strong>Drop files here or click to browse</strong></p>
+            <p style="color: #666; font-size: 14px;">Select all DIVE###_*.docx files at once</p>
+            <input type="file" id="file-input" multiple accept=".docx">
+            <button class="btn" onclick="document.getElementById('file-input').click()">Choose Files</button>
+        </div>
+        
+        <div id="files-selected" style="margin: 20px 0; display: none;">
+            <strong>Files selected:</strong>
+            <ul class="file-list" id="file-list"></ul>
+            <button class="btn" onclick="startUpload()" id="upload-btn">Upload All Files</button>
+        </div>
+        
+        <!-- Step 2: Convert -->
+        <h2><span class="step-number">2</span>Convert to Google Docs</h2>
+        
+        <div class="info-box">
+            <strong>Option A:</strong> Convert files uploaded in Step 1<br>
+            <strong>Option B:</strong> Load .docx files from an existing Drive folder (paste folder URL below)
+        </div>
+        
+        <label for="convert-folder-id">Or load .docx files from folder (optional):</label>
+        <input type="text" id="convert-folder-id" class="folder-input" placeholder="Paste folder URL/ID containing .docx files to convert">
+        
+        <button class="btn" onclick="startConvert()" id="convert-btn" disabled>Start Converting</button>
+        <button class="btn btn-warning" onclick="continueConvert()" id="continue-convert-btn" disabled style="display:none;">Continue Converting</button>
+        
+        <!-- Step 3: Merge -->
+        <h2><span class="step-number">3</span>Merge Documents</h2>
+        
+        <div class="info-box">
+            <strong>Option A:</strong> Merge documents converted in Step 2<br>
+            <strong>Option B:</strong> Load existing Google Docs from a folder (paste folder URL below)
+        </div>
+        
+        <label for="merge-source-folder-id">Or load Google Docs from folder (optional):</label>
+        <input type="text" id="merge-source-folder-id" class="folder-input" placeholder="Paste folder URL/ID containing Google Docs to merge">
+        
+        <button class="btn btn-success" onclick="startMerge()" id="merge-btn" disabled>Start Merge</button>
+        <button class="btn btn-success" onclick="continueMerge()" id="continue-merge-btn" disabled style="display:none;">Continue Merge</button>
+        
+        <!-- Progress & Status -->
+        <div class="progress-bar" id="progress-bar" style="display: none;">
+            <div class="progress-fill" id="progress-fill">0%</div>
+        </div>
+        
+        <div class="status-box" id="status-box"></div>
+        
+        <!-- Reset -->
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
+            <button class="btn btn-secondary" onclick="resetWorkflow()">Reset Workflow</button>
+            <button class="btn btn-secondary" onclick="checkStatus()">Check Status</button>
+        </div>
+    </div>
+    
+    <script>
+        let selectedFiles = [];
+        
+        // ============ FILE SELECTION ============
+        
+        const uploadZone = document.getElementById('upload-zone');
+        const fileInput = document.getElementById('file-input');
+        
+        uploadZone.addEventListener('click', () => {
+            if (event.target.tagName !== 'BUTTON') {
+                fileInput.click();
+            }
+        });
+        
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('drag-over');
+        });
+        
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('drag-over');
+        });
+        
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('drag-over');
+            handleFiles(e.dataTransfer.files);
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+        
+        function handleFiles(files) {
+            selectedFiles = Array.from(files);
+            
+            // Sort by filename (ensures DIVE### order)
+            selectedFiles.sort((a, b) => a.name.localeCompare(b.name));
+            
+            const fileList = document.getElementById('file-list');
+            fileList.innerHTML = '';
+            
+            selectedFiles.forEach((file, index) => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span>${index + 1}. ${file.name}</span>
+                    <span style="color: #666;">${(file.size / (1024*1024)).toFixed(2)} MB</span>
+                `;
+                fileList.appendChild(li);
+            });
+            
+            document.getElementById('files-selected').style.display = 'block';
+            document.getElementById('upload-btn').disabled = false;
+            
+            showStatus('info', `${selectedFiles.length} files selected and sorted by name`);
+        }
+        
+        // ============ UPLOAD ============
+        
+        let uploadState = {
+            currentBatch: 0,
+            totalFiles: 0,
+            uploadedCount: 0,
+            folderId: ''
+        };
+        
+        async function startUpload() {
+            console.log('=== START UPLOAD FUNCTION CALLED ===');
+            console.log('selectedFiles:', selectedFiles.length);
+            
+            if (selectedFiles.length === 0) {
+                showStatus('error', 'No files selected');
+                return;
+            }
+            
+            showStatus('info', '🚀 Starting upload of ' + selectedFiles.length + ' files in batches...');
+            showProgress(0, selectedFiles.length);
+            document.getElementById('upload-btn').disabled = true;
+            updateWorkflowStep('upload');
+            
+            // Initialize state
+            uploadState.currentBatch = 0;
+            uploadState.totalFiles = selectedFiles.length;
+            uploadState.uploadedCount = 0;
+            // Pass null instead of empty string if folder field is blank
+            const folderValue = document.getElementById('folder-id').value.trim();
+            uploadState.folderId = folderValue !== '' ? folderValue : null;
+            
+            // Upload in batches
+            await uploadNextBatch();
+        }
+        
+        async function uploadNextBatch() {
+            console.log('=== UPLOAD NEXT BATCH CALLED ===');
+            console.log('Current state:', uploadState);
+            
+            const BATCH_SIZE = 1; // Upload 1 file at a time (files are 18MB each)
+            const startIdx = uploadState.currentBatch * BATCH_SIZE;
+            const endIdx = Math.min(startIdx + BATCH_SIZE, selectedFiles.length);
+            
+            console.log('Batch size:', BATCH_SIZE);
+            console.log('Start index:', startIdx);
+            console.log('End index:', endIdx);
+            console.log('Total files:', selectedFiles.length);
+            
+            if (startIdx >= selectedFiles.length) {
+                // All batches uploaded! Now tell server we're done uploading
+                console.log('All batches complete, marking as uploaded');
+                google.script.run
+                    .withSuccessHandler(function(result) {
+                        console.log('markUploadComplete result:', result);
+                        showStatus('success', '✅ All ' + uploadState.totalFiles + ' files uploaded successfully!');
+                        document.getElementById('convert-btn').disabled = false;
+                        updateWorkflowStep('convert');
+                    })
+                    .withFailureHandler(onError)
+                    .markUploadComplete();
+                return;
+            }
+            
+            const batchFiles = selectedFiles.slice(startIdx, endIdx);
+            console.log('Batch files count:', batchFiles.length);
+            console.log('Uploading batch ' + (uploadState.currentBatch + 1) + ': files ' + (startIdx + 1) + '-' + endIdx);
+            
+            showStatus('info', '📤 Uploading batch ' + (uploadState.currentBatch + 1) + ': files ' + (startIdx + 1) + '-' + endIdx + ' of ' + uploadState.totalFiles);
+            
+            // Convert batch to base64
+            const filesData = [];
+            try {
+                console.log('Starting file conversion to base64...');
+                for (let i = 0; i < batchFiles.length; i++) {
+                    const file = batchFiles[i];
+                    console.log('Converting file ' + (i + 1) + '/' + batchFiles.length + ':', file.name);
+                    const base64 = await fileToBase64(file);
+                    filesData.push({
+                        name: file.name,
+                        data: base64
+                    });
+                }
+                console.log('All files converted successfully');
+            } catch (conversionError) {
+                console.error('ERROR during file conversion:', conversionError);
+                showStatus('error', 'Failed to read files: ' + conversionError.message);
+                document.getElementById('upload-btn').disabled = false;
+                return;
+            }
+            
+            console.log('Batch prepared, calling startBatchUpload with ' + filesData.length + ' files');
+            console.log('Folder ID:', uploadState.folderId);
+            
+            // Upload this batch
+            try {
+                google.script.run
+                    .withSuccessHandler(onBatchUploadSuccess)
+                    .withFailureHandler(onError)
+                    .startBatchUpload(filesData, uploadState.folderId);
+                console.log('google.script.run.startBatchUpload called');
+            } catch (error) {
+                console.error('ERROR calling startBatchUpload:', error);
+                showStatus('error', 'Error: ' + error.message);
+                document.getElementById('upload-btn').disabled = false;
+            }
+        }
+        
+        function onBatchUploadSuccess(result) {
+            console.log('=== BATCH UPLOAD SUCCESS ===');
+            console.log('Batch upload result:', result);
+            console.log('Result.success:', result.success);
+            console.log('Files in this batch:', result.uploadedFiles ? result.uploadedFiles.length : 0);
+            console.log('Total uploaded on server:', result.totalUploaded);
+            console.log('Current uploadState:', uploadState);
+            
+            if (result.success) {
+                uploadState.uploadedCount += result.uploadedFiles.length;
+                uploadState.currentBatch++;
+                
+                console.log('Updated uploadState.uploadedCount:', uploadState.uploadedCount);
+                console.log('Updated uploadState.currentBatch:', uploadState.currentBatch);
+                console.log('Total files:', uploadState.totalFiles);
+                
+                showProgress(uploadState.uploadedCount, uploadState.totalFiles);
+                showStatus('info', '✓ Batch ' + uploadState.currentBatch + ' complete. Uploaded: ' + uploadState.uploadedCount + '/' + uploadState.totalFiles);
+                
+                // Small delay before next batch to ensure state is saved
+                console.log('Waiting 500ms before next batch...');
+                setTimeout(function() {
+                    console.log('Starting next batch after delay');
+                    uploadNextBatch().catch(function(error) {
+                        console.error('Error in uploadNextBatch:', error);
+                        showStatus('error', 'Error uploading next batch: ' + error.message);
+                        document.getElementById('upload-btn').disabled = false;
+                    });
+                }, 500);
+            } else {
+                console.error('Batch upload failed:', result.error);
+                showStatus('error', 'Upload failed: ' + (result.error || 'Unknown error'));
+                document.getElementById('upload-btn').disabled = false;
+            }
+        }
+        
+        // ============ CONVERT ============
+        
+        function startConvert() {
+            const convertFolderId = document.getElementById('convert-folder-id').value.trim();
+            
+            if (convertFolderId) {
+                // Option B: Load and convert from existing folder
+                showStatus('info', 'Loading .docx files from folder and converting...');
+                document.getElementById('convert-btn').disabled = true;
+                updateWorkflowStep('convert');
+                
+                google.script.run
+                    .withSuccessHandler(onConvertResult)
+                    .withFailureHandler(onError)
+                    .convertFromFolder(convertFolderId);
+            } else {
+                // Option A: Convert uploaded files
+                showStatus('info', 'Converting files to Google Docs... This may take a few minutes.');
+                document.getElementById('convert-btn').disabled = true;
+                
+                google.script.run
+                    .withSuccessHandler(onConvertResult)
+                    .withFailureHandler(onError)
+                    .convertUploadedFiles();
+            }
+        }
+        
+        function continueConvert() {
+            showStatus('info', 'Continuing conversion...');
+            document.getElementById('continue-convert-btn').disabled = true;
+            
+            google.script.run
+                .withSuccessHandler(onConvertResult)
+                .withFailureHandler(onError)
+                .continueConverting();
+        }
+        
+        function onConvertResult(result) {
+            if (result.success) {
+                showStatus('success', result.message);
+                document.getElementById('merge-btn').disabled = false;
+                document.getElementById('continue-convert-btn').style.display = 'none';
+                updateWorkflowStep('merge');
+            } else if (result.partial) {
+                showStatus('warning', result.message + '<br>' + result.instruction);
+                document.getElementById('continue-convert-btn').style.display = 'inline-block';
+                document.getElementById('continue-convert-btn').disabled = false;
+            } else {
+                showStatus('error', 'Conversion failed: ' + result.error);
+                document.getElementById('convert-btn').disabled = false;
+            }
+        }
+        
+        // ============ MERGE ============
+        
+        function startMerge() {
+            showStatus('info', 'Creating master document and starting merge...');
+            document.getElementById('merge-btn').disabled = true;
+            updateWorkflowStep('merge');
+            
+            const folderId = document.getElementById('folder-id').value.trim();
+            const sourceFolderId = document.getElementById('merge-source-folder-id').value.trim();
+            
+            google.script.run
+                .withSuccessHandler(onMergeStarted)
+                .withFailureHandler(onError)
+                .startMerge(folderId, sourceFolderId);
+        }
+        
+        function onMergeStarted(result) {
+            if (result.success) {
+                showStatus('info', result.message + '<br><a href="' + result.masterDocUrl + '" target="_blank" class="link-button">Open Master Document</a>');
+                
+                // Auto-start first merge batch
+                continueMerge();
+            } else {
+                showStatus('error', 'Failed to start merge: ' + result.error);
+                document.getElementById('merge-btn').disabled = false;
+            }
+        }
+        
+        function continueMerge() {
+            showStatus('info', 'Merging chunks... Please wait.');
+            document.getElementById('continue-merge-btn').disabled = true;
+            
+            google.script.run
+                .withSuccessHandler(onMergeResult)
+                .withFailureHandler(onError)
+                .continueMerge();
+        }
+        
+        function onMergeResult(result) {
+            if (result.complete) {
+                showStatus('success', '🎉 ' + result.message + '<br><br><a href="' + result.masterDocUrl + '" target="_blank" class="link-button">➜ Open Completed Document</a>');
+                updateWorkflowStep('complete');
+            } else if (result.partial) {
+                showStatus('warning', result.message + '<br>' + result.instruction + '<br><a href="' + result.masterDocUrl + '" target="_blank" class="link-button">View Progress</a>');
+                document.getElementById('continue-merge-btn').style.display = 'inline-block';
+                document.getElementById('continue-merge-btn').disabled = false;
+            } else {
+                showStatus('error', 'Merge failed: ' + result.error);
+            }
+        }
+        
+        // ============ UTILITIES ============
+        
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        function showStatus(type, message) {
+            const statusBox = document.getElementById('status-box');
+            statusBox.className = 'status-box active ' + type;
+            statusBox.innerHTML = message;
+        }
+        
+        function showProgress(current, total) {
+            const progressBar = document.getElementById('progress-bar');
+            const progressFill = document.getElementById('progress-fill');
+            
+            progressBar.style.display = 'block';
+            const percent = Math.round((current / total) * 100);
+            progressFill.style.width = percent + '%';
+            progressFill.textContent = percent + '%';
+            
+            if (current === total) {
+                setTimeout(() => {
+                    progressBar.style.display = 'none';
+                }, 2000);
+            }
+        }
+        
+        function updateWorkflowStep(step) {
+            const steps = ['upload', 'convert', 'merge', 'complete'];
+            const currentIndex = steps.indexOf(step);
+            
+            steps.forEach((s, index) => {
+                const element = document.getElementById('step-' + s);
+                
+                if (index < currentIndex) {
+                    element.classList.add('complete');
+                    element.classList.remove('active');
+                } else if (index === currentIndex) {
+                    element.classList.add('active');
+                    element.classList.remove('complete');
+                } else {
+                    element.classList.remove('active', 'complete');
+                }
+            });
+        }
+        
+        function resetWorkflow() {
+            if (!confirm('Reset workflow and clear all progress?')) {
+                return;
+            }
+            
+            google.script.run
+                .withSuccessHandler((result) => {
+                    showStatus('info', result.message);
+                    location.reload();
+                })
+                .withFailureHandler(onError)
+                .resetWorkflow();
+        }
+        
+        function checkStatus() {
+            google.script.run
+                .withSuccessHandler((status) => {
+                    let message = '<strong>Current Status:</strong><br>';
+                    message += 'Step: ' + status.step + '<br>';
+                    message += 'Total Chunks: ' + status.totalChunks + '<br>';
+                    message += 'Uploaded: ' + status.uploadedCount + '<br>';
+                    message += 'Converted: ' + status.convertedCount + '<br>';
+                    message += 'Merged: ' + status.mergedCount + '<br>';
+                    
+                    showStatus('info', message);
+                    
+                    // Enable appropriate buttons based on status
+                    if (status.step === 'uploaded') {
+                        document.getElementById('convert-btn').disabled = false;
+                        updateWorkflowStep('convert');
+                    } else if (status.step === 'converted') {
+                        document.getElementById('merge-btn').disabled = false;
+                        updateWorkflowStep('merge');
+                    } else if (status.step === 'merging') {
+                        document.getElementById('continue-merge-btn').style.display = 'inline-block';
+                        document.getElementById('continue-merge-btn').disabled = false;
+                        updateWorkflowStep('merge');
+                    }
+                    
+                    // Always enable jump-in options (allow starting at any stage)
+                    document.getElementById('convert-btn').disabled = false;
+                    document.getElementById('merge-btn').disabled = false;
+                })
+                .withFailureHandler(onError)
+                .getStatus();
+        }
+        
+        function onError(error) {
+            console.log('=== ERROR CALLBACK ===');
+            console.error('Error occurred:', error);
+            showStatus('error', 'Error: ' + (error.message || error.toString()));
+        }
+        
+        // Check status on load
+        window.onload = () => {
+            checkStatus();
+        };
+    </script>
+</body>
+</html>

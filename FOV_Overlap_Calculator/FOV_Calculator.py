@@ -106,6 +106,17 @@ class FOVCalculatorGUI:
                 "HorizontalOverlap": 40,
                 "VerticalOverlap": 90,
                 "ImageSize": 12  # MB estimate
+            },
+            "DJI Mavic 3M": {
+                "DFOV": 84,
+                "HFOV": "x",
+                "VFOV": "x",
+                "ImageColumns": 5280,
+                "ImageRows": 3956,
+                "f": 24,  # Equivalent focal length
+                "HorizontalOverlap": 75,
+                "VerticalOverlap": 80,
+                "ImageSize": 20  # MB estimate (20MP JPEG+RAW)
             }
         }
         
@@ -265,6 +276,9 @@ class FOVCalculatorGUI:
         if selected_camera == "UAV Onboard":
             self.altitude_var.set("54")
             self.frame_rate_var.set("2")
+        elif selected_camera == "DJI Mavic 3M":
+            self.altitude_var.set("30")  # Typical agricultural mapping altitude
+            self.frame_rate_var.set("2")  # Typical mapping frame rate
         elif selected_camera == "GoPro Hero7 Black":
             self.altitude_var.set("2")
             self.frame_rate_var.set("2")
