@@ -1,0 +1,190 @@
+import os
+import re
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import pandas as pd
+from datetime import datetime
+
+# --- Helper Functions ---
+def parse_image_time(filename):
+    """Extracts timestamp from filename format: ...2026-06-13T034325.017982..."""
+    match = re.search(r'(\d{4}-\d{2}-\d{2}T\d{6}\.\d+)', filename)
+    if match:
+        try:
+            return datetime.strptime(match.group(1), "%Y-%m-%dT%H%M%S.%f")
+        except ValueError:
+            return None
+    return None
+
+def convert_dm_to_dd(coord_str):
+    """Converts format like '29N27.13709' or '87W31.93510' to decimal degrees."""
+    if pd.isna(coord_str) or not str(coord_str).strip():
+        return None
+    
+    coord_str = str(coord_str).strip()
+    match = re.match(r'(\d+)([NSEWnsew])(\d+\.\d+)', coord_str)
+    if match:
+        deg = float(match.group(1))
+        direction = match.group(2).upper()
+        mins = float(match.group(3))
+        dd = deg + (mins / 60.0)
+        if direction in ['S', 'W']:
+            dd *= -1
+        return dd
+    return None
+
+def parse_lon_lat(lon_lat_series):
+    """Splits 'Lon/Lat' column by whitespace and converts strings to DD floats."""
+    # Replace any accidental slashes or commas with spaces, then split by whitespace
+    parsed = lon_lat_series.astype(str).str.replace('/', ' ').str.replace(',', ' ').str.strip().str.split(expand=True)
+    
+    if parsed.shape[1] >= 2:
+        # User error showed 29N... first, meaning Latitude is first
+        lat = parsed[0].apply(convert_dm_to_dd)
+        lon = parsed[1].apply(convert_dm_to_dd)
+        return lat, lon
+        
+    return pd.Series(dtype=float), pd.Series(dtype=float)
+
+# --- Main Processing Logic ---
+def process_data(img_dir, nav_file, out_dir):
+    try:
+        # 1. Gather all JPEG images
+        valid_exts = ('.jpg', '.jpeg')
+        image_files = [f for f in os.listdir(img_dir) if f.lower().endswith(valid_exts)]
+        
+        if not image_files:
+            messagebox.showerror("Error", "No JPEG images found in the selected folder.")
+            return
+
+        # 2. Extract timestamps and build image DataFrame
+        img_records = []
+        for img in image_files:
+            dt = parse_image_time(img)
+            if dt:
+                img_records.append({'Image_Name': img, 'datetime': dt})
+        
+        df_imgs = pd.DataFrame(img_records).sort_values('datetime')
+        if df_imgs.empty:
+            messagebox.showerror("Error", "Could not parse timestamps from JPEG filenames.")
+            return
+
+        # 3. Load and prepare NavData
+        df_nav = pd.read_csv(nav_file, skipinitialspace=True, low_memory=False)
+        df_nav.columns = df_nav.columns.str.strip()
+
+        required_cols = ['Date', 'Time', 'Lon/Lat', 'Altitude', 'Heading', 'Pitch', 'Roll']
+        missing = [col for col in required_cols if col not in df_nav.columns]
+        
+        depth_col = 'Depth of vehicle' if 'Depth of vehicle' in df_nav.columns else 'Depth'
+        if depth_col not in df_nav.columns:
+            missing.append('Depth/Depth of vehicle')
+
+        if missing:
+            messagebox.showerror("Error", f"Nav file is missing expected columns:\n{', '.join(missing)}")
+            return
+
+        # 4. Parse Nav Date/Time
+        df_nav['Date'] = df_nav['Date'].astype(str).str.strip()
+        df_nav['Time'] = df_nav['Time'].astype(str).str.strip()
+        df_nav['datetime_str'] = df_nav['Date'] + ' ' + df_nav['Time']
+
+        # Cascading format checks
+        dt_1 = pd.to_datetime(df_nav['datetime_str'], format='%m/%d/%Y %H:%M:%S.%f', errors='coerce')
+        dt_2 = pd.to_datetime(df_nav['datetime_str'], format='%m/%d/%Y %H:%M:%S', errors='coerce')
+        dt_3 = pd.to_datetime(df_nav['datetime_str'], format='%Y-%m-%d %H:%M:%S.%f', errors='coerce')
+        dt_4 = pd.to_datetime(df_nav['datetime_str'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+        
+        df_nav['datetime'] = dt_1.fillna(dt_2).fillna(dt_3).fillna(dt_4)
+        df_nav = df_nav.dropna(subset=['datetime']).sort_values('datetime')
+        df_nav = df_nav.drop_duplicates(subset=['datetime'])
+
+        # 5. Parse Lon/Lat 
+        df_nav['Latitude'], df_nav['Longitude'] = parse_lon_lat(df_nav['Lon/Lat'])
+        
+        # Drop rows where coordinates failed to parse entirely to prevent empty merges
+        df_nav = df_nav.dropna(subset=['Latitude', 'Longitude'])
+
+        # 6. Merge by closest time
+        merged = pd.merge_asof(df_imgs, df_nav, on='datetime', direction='nearest', tolerance=pd.Timedelta('3 seconds'))
+
+        matched_count = merged['Latitude'].notna().sum()
+        if matched_count == 0:
+            messagebox.showerror("Error", "No matching Nav data found for the image timestamps. Coordinates may have failed to parse.")
+            return
+
+        # 7. Format final Output
+        output_df = merged[['Image_Name', 'Latitude', 'Longitude', depth_col, 'Altitude', 'Pitch', 'Roll', 'Heading']].copy()
+        output_df.rename(columns={depth_col: 'Depth'}, inplace=True)
+        
+        # --- CRITICAL FIX: Force columns to be numeric before doing math ---
+        numeric_columns = ['Latitude', 'Longitude', 'Depth', 'Altitude', 'Pitch', 'Roll', 'Heading']
+        for col in numeric_columns:
+            output_df[col] = pd.to_numeric(output_df[col], errors='coerce')
+        
+        # Ensure depth is strictly negative and altitude is strictly positive
+        output_df['Depth'] = -output_df['Depth'].abs()
+        output_df['Altitude'] = output_df['Altitude'].abs()
+        
+        # Handle NA values and round for clean CSV
+        output_df = output_df.dropna()
+        output_df[['Latitude', 'Longitude', 'Depth', 'Altitude', 'Pitch', 'Roll', 'Heading']] = \
+            output_df[['Latitude', 'Longitude', 'Depth', 'Altitude', 'Pitch', 'Roll', 'Heading']].round(6)
+
+        # 8. Export
+        out_path = os.path.join(out_dir, 'Metashape_Import_Nav.csv')
+        output_df.to_csv(out_path, index=False)
+
+        messagebox.showinfo("Success", f"CSV successfully generated!\n\nSaved to: {out_path}\nTotal paired images: {len(output_df)}")
+
+    except Exception as e:
+        messagebox.showerror("Unexpected Error", f"An error occurred during processing:\n{str(e)}")
+
+# --- GUI Construction ---
+def run_app():
+    root = tk.Tk()
+    root.title("Metashape Nav Parser")
+    root.geometry("600x420")
+    root.resizable(False, False)
+
+    img_dir_var = tk.StringVar()
+    nav_file_var = tk.StringVar()
+    out_dir_var = tk.StringVar()
+
+    def sel_img(): img_dir_var.set(filedialog.askdirectory(title="Select Folder With JPEGs"))
+    def sel_nav(): nav_file_var.set(filedialog.askopenfilename(title="Select _NavData.txt", filetypes=[("Text/CSV Files", "*.txt *.csv")]))
+    def sel_out(): out_dir_var.set(filedialog.askdirectory(title="Select Output Folder"))
+    
+    def on_run():
+        if not img_dir_var.get() or not nav_file_var.get() or not out_dir_var.get():
+            messagebox.showwarning("Missing Input", "Please select all three paths before running.")
+            return
+        process_data(img_dir_var.get(), nav_file_var.get(), out_dir_var.get())
+
+    padding = {'padx': 15, 'pady': 5}
+    tk.Label(root, text="Metashape Photogrammetry Pre-Processor", font=("Arial", 14, "bold")).pack(pady=15)
+
+    tk.Label(root, text="1. Select Image Folder (Contains timestamped .jpg files)").pack(anchor='w', **padding)
+    f1 = tk.Frame(root)
+    f1.pack(fill='x', **padding)
+    tk.Entry(f1, textvariable=img_dir_var, width=60, state='readonly').pack(side='left')
+    tk.Button(f1, text="Browse", command=sel_img, width=10).pack(side='right')
+
+    tk.Label(root, text="2. Select Navigation File ('_NavData.txt')", fg="blue", justify="left").pack(anchor='w', **padding)
+    f2 = tk.Frame(root)
+    f2.pack(fill='x', **padding)
+    tk.Entry(f2, textvariable=nav_file_var, width=60, state='readonly').pack(side='left')
+    tk.Button(f2, text="Browse", command=sel_nav, width=10).pack(side='right')
+
+    tk.Label(root, text="3. Select Output Folder").pack(anchor='w', **padding)
+    f3 = tk.Frame(root)
+    f3.pack(fill='x', **padding)
+    tk.Entry(f3, textvariable=out_dir_var, width=60, state='readonly').pack(side='left')
+    tk.Button(f3, text="Browse", command=sel_out, width=10).pack(side='right')
+
+    tk.Button(root, text="Generate CSV", bg="#4CAF50", fg="white", font=("Arial", 12, "bold"), command=on_run).pack(pady=25, ipadx=20, ipady=5)
+
+    root.mainloop()
+
+if __name__ == "__main__":
+    run_app()
