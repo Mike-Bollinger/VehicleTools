@@ -79,7 +79,7 @@ VEHICLE_CONFIGS: dict[str, dict] = {
             },
         ],
     },
-    "Mahi SN402": {
+    "Mahi SN402 Imaging": {
         "serial_number": "SN402",
         "sources": [
             {
@@ -115,6 +115,42 @@ VEHICLE_CONFIGS: dict[str, dict] = {
                 ],
             },
         ],
+    }, 
+    "Mahi SN402 SAS": {
+        "serial_number": "SN402",
+        "sources": [
+            {
+                "label": "Vehicle",
+                "host": "192.168.20.30",
+                "port": 22,
+                "username": "remus",
+                "password": "hydroid",
+                "remote_paths": [
+                    "/home/remus/data/remus.rlf",
+                    "/home/remus/data/adcp.dat",
+                    "/home/remus/data/gps.dat",
+                    "/home/remus/bin/remus.out",
+                    "/home/remus/config/adcp.txt",
+                    "/home/remus/config/remus_v.ini",
+                    "/home/remus/logs/phins_raw.log",
+                    "/home/remus/logs/phins_std.log",
+                    "/home/remus/logs/remus.log",
+                    "/home/remus/missions/mission.rmf",
+                ],
+            },
+            {
+                "label": "Kraken",
+                "host": "192.168.20.37", #SN005 Kraken = 192.168.20.17
+                "port": 22,
+                "username": "kraken",
+                "password": "Kraken",
+                "remote_paths": [
+                    "/kraken/receiver/RTSAS.xml",
+                    "/kraken/receiver/RTSAS.ini",
+                    "/kraken/receiver/RTSAS.log", 
+                ],
+            },
+        ],    
     },
 }
 
