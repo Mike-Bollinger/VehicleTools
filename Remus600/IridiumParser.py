@@ -1,9 +1,33 @@
-from __future__ import annotations
+"""
+Title: Iridium SBD Message Parser and Map Viewer
+Author: Mike Bollinger
+Last Updated: 2026-07-01
 
-import json
-import re
-import socket
-import webbrowser
+FUNCTION:
+    Parses REMUS/Iridium Short Burst Data (SBD) status messages (message
+    number, battery voltages, GPS time/position/fix quality, geo x/y/z) and
+    serves a local web page that lists parsed fields and plots the position
+    on a map tile viewer.
+
+USAGE:
+    Run the script to start a local HTTP server and open the viewer in your
+    default browser:
+        python IridiumParser.py
+    Paste one or more raw Iridium SBD message strings into the web page to
+    parse and plot them.
+
+INPUTS:
+    - Raw Iridium SBD message text pasted into the web UI, matching the
+      format: "<msg#> <status> <main batt> <emerg batt> <time>,<lat>,<N/S>,
+      <lon>,<E/W>,<fix quality>,<satellites> <geo_x> <geo_y> <geo_z> ...".
+
+OUTPUTS:
+    An interactive local web page (served over HTTP, opened in the browser)
+    showing parsed message fields in a table and plotted positions on a map.
+    No files are written to disk.
+"""
+
+from __future__ import annotations
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 from http import HTTPStatus

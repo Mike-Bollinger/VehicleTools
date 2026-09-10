@@ -1,6 +1,9 @@
 """
 quick_look_convert_data_2_geo.py
 ---------------------
+Author: Mike Bollinger
+Last Updated: 2026-06-07
+
 Quick-look georeferencing of LLS .xyz files.
 
 Reads every *.xyz in BASE_DIR/lls_raw, sub-samples timestamps by TIME_SKIP,
@@ -11,6 +14,19 @@ Navigation data is read from pre-processed PHINS CSV files in
 BASE_DIR/processing/vehicle/:
   ATITUD.csv, HEHDT.csv, UTMWGS.csv, DEPIN_.csv,
   LOGDVL.csv, SPEED_.csv, POSITI.csv
+
+USAGE:
+    Edit BASE_DIR, OFFSETS, TIME_OFFSET, and TIME_SKIP below to match your
+    dive, then run:
+        python quick_look_convert_data_2_geo.py
+
+INPUTS:
+    - Raw LLS .xyz files in BASE_DIR/lls_raw.
+    - Pre-processed PHINS navigation CSVs in BASE_DIR/processing/vehicle/.
+
+OUTPUTS:
+    Georeferenced geo_<stem>.xyz point files written to
+    BASE_DIR/quick_look/LLS/geo/.
 """
 
 import os

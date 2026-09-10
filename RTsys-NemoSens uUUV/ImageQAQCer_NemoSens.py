@@ -14,6 +14,17 @@ Main Features:
 - Play, pause, and navigate images with forward and backward buttons.
 - Display image metadata from CSV in a sidebar.
 - Plot geographic coordinates of images and highlight the current one.
+
+USAGE:
+    Run the script and select an image folder in the dialog that appears:
+        python ImageQAQCer_NemoSens.py
+
+INPUTS:
+    - A folder of images, each with a matching sidecar CSV of the same base
+      name containing metadata fields (including Latitude/Longitude).
+
+OUTPUTS:
+    An interactive Tkinter window only; no files are created or modified.
 """
 import os
 import csv

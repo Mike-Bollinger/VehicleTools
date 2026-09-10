@@ -2,6 +2,7 @@
 PHINS Binary Data to Shapefile Converter
 Author: Mike Bollinger
 Date: 2025-12-08
+Last Updated: 2025-12-09
 Version: 1.0
 
 Description:
@@ -13,7 +14,19 @@ Description:
     - Binary format with specific message structures
     - Contains INS (Inertial Navigation System) data
     - Includes position, attitude, velocity, and status information
-    
+
+USAGE:
+    Run the script and use the Tkinter GUI to select the PHINS binary log
+    file(s) and an output folder:
+        python Remus_PHINS_BinaryToSHP.py
+
+INPUTS:
+    - One or more PHINS Standard v2 binary navigation log files.
+
+OUTPUTS:
+    A CSV of parsed navigation records and a point/polyline shapefile per
+    input file, written to the chosen output folder.
+
 References:
     - iXBlue/Exail PHINS C7 Inertial Navigation System
     - PHINS Standard Protocol v2

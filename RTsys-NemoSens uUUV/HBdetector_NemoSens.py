@@ -7,6 +7,23 @@ Description:
     unseen images into appropriate folders (rock only). Skips previously classified images.
     Additionally, it generates a CSV report of classifications.
 
+USAGE:
+    Edit the folder paths in the `if __name__ == "__main__":` block (rock_folder,
+    sand_folder training examples; input_folder to classify; output_rock_folder;
+    csv_output_path), then run:
+        python HBdetector_NemoSens.py
+
+INPUTS:
+    - rock_folder / sand_folder: labeled example images used to train the
+      Random Forest classifier.
+    - input_folder: unclassified images to sort.
+    - model_save_path: path to save/load the trained model (.pkl).
+
+OUTPUTS:
+    - Images classified as "rock" copied into output_rock_folder.
+    - A CSV report of image classifications at csv_output_path.
+    - A saved/reused trained model file (model_save_path).
+
 Version: 1.1.0
 Last Updated: 2025-01-09
 """

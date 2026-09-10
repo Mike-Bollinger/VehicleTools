@@ -2,11 +2,24 @@
 """
 Author: Adapted from Noah Hunt's R script
 Created: 2025-04-10
+Last Updated: 2025-04-11
 Organization: NOAA National Ocean Service (NOS) National Centers for Coastal
               Ocean Science (NCCOS) Marine Spatial Ecology Division (MSE)
               Seascape Ecology and Analytics Branch
 Project: Developed for the Mesophotic Deep Benthic Communities Project
 Description: Plots Remus vehicle motion and bathymetry data from NAV files
+
+USAGE:
+    Run the script and select a NAV file via the GUI dialog that appears:
+        python Remus_Data_Plotter.py
+
+INPUTS:
+    - A Remus NAV text/log file with a header line, a units line, and
+      motion/bathymetry data rows.
+
+OUTPUTS:
+    Matplotlib figure(s) of vehicle motion and bathymetry over time,
+    displayed in a Tkinter-embedded plot window. No files are written to disk.
 """
 
 import os

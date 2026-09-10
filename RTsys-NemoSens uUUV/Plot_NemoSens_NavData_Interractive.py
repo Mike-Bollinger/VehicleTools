@@ -1,3 +1,31 @@
+"""
+Title: NemoSens Navigation Data Interactive Plotter
+Author: Mike Bollinger
+Last Updated: 2025
+
+FUNCTION:
+    Loads a NemoSens navigation CSV, converts units (radians to degrees,
+    m/s to knots, depth sign convention), and opens an interactive Plotly
+    figure with a Tkinter dropdown UI for choosing up to four attributes to
+    plot against time.
+
+USAGE:
+    Run the script directly:
+        python Plot_NemoSens_NavData_Interractive.py
+    Select the navigation CSV in the file dialog, choose the four attributes
+    to plot from the dropdown menus, then click "Update Plot" to open the
+    interactive Plotly chart in a browser tab.
+
+INPUTS:
+    - A semicolon-delimited navigation CSV selected via the GUI, containing
+      "timestamp s", "Pitch rad", "Roll rad", "Heading rad", "Speed m/s",
+      "Depth m", and "Bottom m" columns.
+
+OUTPUTS:
+    An interactive Plotly plot (opened in the default browser) of the four
+    selected attributes over time. No files are written to disk.
+"""
+
 import pandas as pd
 import numpy as np
 import plotly.graph_objs as go

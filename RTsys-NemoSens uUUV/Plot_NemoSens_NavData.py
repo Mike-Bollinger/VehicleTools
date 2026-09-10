@@ -1,3 +1,29 @@
+"""
+Title: NemoSens Navigation Data Quick Plotter
+Author: Mike Bollinger
+Last Updated: 2025
+
+FUNCTION:
+    Loads a single NemoSens navigation CSV from a hardcoded file path,
+    converts units (radians to degrees, m/s to knots), and plots one chosen
+    attribute against time using matplotlib.
+
+USAGE:
+    Edit the `file_path` variable below to point at the desired navigation
+    CSV, edit the call to plot_attribute() at the bottom of the script to
+    choose which column to plot, then run:
+        python Plot_NemoSens_NavData.py
+
+INPUTS:
+    - A semicolon-delimited navigation CSV at `file_path`, containing
+      "timestamp s", "Pitch rad", "Roll rad", "Heading rad", and
+      "Speed m/s" columns among others.
+
+OUTPUTS:
+    A matplotlib figure window showing the selected attribute vs. time.
+    No files are written to disk.
+"""
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np

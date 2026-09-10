@@ -6,8 +6,23 @@ This script converts an AUV JSON mission from a lawnmower pattern to a zamboni p
 The zamboni pattern reduces sharp turns by reordering lines to create multiple smaller boxes
 within the survey area, making the AUV navigation more efficient.
 
-Author: [Your Name]
+Author: Mike Bollinger
 Date: July 27, 2025
+
+USAGE:
+    Run the script to launch the Tkinter GUI:
+        python Zambonify_Mission_NemoSens.py
+    Load a lawnmower-pattern mission JSON, review the optional plot preview,
+    and export the converted zamboni-pattern mission JSON.
+
+INPUTS:
+    - A NemoSens/AUV mission JSON file containing one or more rail family
+      lawnmower survey patterns (selected via the GUI file dialog).
+
+OUTPUTS:
+    A new mission JSON file with survey lines reordered into a zamboni
+    pattern, saved to a user-chosen location, plus an optional matplotlib
+    preview plot (when matplotlib is available).
 """
 
 import json

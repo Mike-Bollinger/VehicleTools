@@ -1,3 +1,26 @@
+"""
+Title: Remus Navigation TXT to CSV Converter (Script2, Python version)
+Author: Mike Bollinger
+Last Updated: 2025-03-04
+
+FUNCTION:
+    Companion Python port of Script2_CompleteNav_OR2401.R. Reads a single
+    Remus navigation .txt log, converts DMS Lon/Lat to decimal degrees, and
+    writes a formatted CSV ready for Script3_CreateAUVTrackLines_MB.py.
+
+USAGE:
+    Run the script and select the navigation file via the file dialog:
+        python Script2_NavTXTtoCSV.py
+
+INPUTS:
+    - A Remus navigation .txt log file (comma-delimited, header + units +
+      data rows) selected via the GUI file dialog.
+
+OUTPUTS:
+    A formatted navigation CSV ("<dive>_Veh_Data_Formatted.csv") written
+    alongside/relative to the input file, with decimal-degree coordinates.
+"""
+
 import os
 import pandas as pd
 from datetime import datetime

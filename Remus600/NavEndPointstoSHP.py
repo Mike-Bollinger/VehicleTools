@@ -1,3 +1,29 @@
+"""
+Title: Nav Log Start/End Points to Shapefile Converter
+Author: Mike Bollinger
+Last Updated: 2025-06-04
+
+FUNCTION:
+    Reads a dive log CSV containing start and end position fields for each
+    dive (in DMS format, e.g. "28N05.739") and writes one point shapefile per
+    dive containing the parsed start and end coordinates plus dive metadata.
+
+USAGE:
+    Import convert_csv_to_individual_shapefiles(csv_path, output_dir) and call
+    it with the dive log CSV and a destination folder, or adapt the bottom of
+    the script to run standalone.
+
+INPUTS:
+    - csv_path: dive log CSV with columns including "Dive ", "LatitudeStart",
+      "LongitudeStart", "LatitudeEnd", "LongitudeEnd", and "Planned" distance.
+    - output_dir: folder where per-dive shapefiles are written (created if
+      missing).
+
+OUTPUTS:
+    One point shapefile per dive (named by dive number) containing Start and
+    End point features with dive metadata attributes.
+"""
+
 import csv
 import os
 import re

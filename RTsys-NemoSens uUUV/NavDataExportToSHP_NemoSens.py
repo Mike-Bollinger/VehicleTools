@@ -1,3 +1,30 @@
+"""
+Title: NemoSens Navigation CSV to Shapefile Converter
+Author: Mike Bollinger
+Last Updated: 2025
+
+FUNCTION:
+    Converts one or more semicolon-delimited NemoSens navigation CSV files
+    into WGS84 point shapefiles, filtering out rows with zero/zero
+    latitude-longitude and non-positive depth.
+
+USAGE:
+    Run the script directly to launch file/folder selection dialogs:
+        python NavDataExportToSHP_NemoSens.py
+    Select one or more navigation CSV files, then select an output folder.
+
+INPUTS:
+    - One or more semicolon-delimited CSV files selected via the GUI,
+      containing at minimum "latitude deg", "Longitude deg", and "Depth m"
+      columns.
+    - An output directory selected via the GUI.
+
+OUTPUTS:
+    One point shapefile per input CSV (same base name, .shp extension),
+    written to the chosen output directory in EPSG:4326, retaining all
+    original CSV columns.
+"""
+
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point

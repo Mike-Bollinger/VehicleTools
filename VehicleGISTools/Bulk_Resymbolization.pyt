@@ -1,6 +1,38 @@
 """
-ArcGIS Pro Python Toolbox for Batch Resymbolization
-Applies random, distinct colors to multiple feature classes while considering background color
+================================================================================
+BULK RESYMBOLIZATION - ARCGIS PRO PYTHON TOOLBOX
+================================================================================
+
+Author:         Mike Bollinger
+Last Updated:   June 4, 2025
+
+FUNCTION:
+    Applies random, distinct colors to multiple feature classes at once,
+    choosing hues that remain visually distinguishable against a light or
+    dark map background.
+
+USAGE:
+    Load this .pyt in ArcGIS Pro's Geoprocessing pane (Toolboxes > Add Toolbox),
+    then run the "Batch Apply Random Colors" tool with layers already added
+    to the active map.
+
+INPUTS:
+    - Input Feature Layers (multi-value, required): point, line, or polygon
+      layers to recolor, in the order colors should be assigned.
+    - Background Color (required): "Light" or "Dark", used to bias the
+      generated color brightness/saturation for visibility.
+    - Color Order (required): "Rainbow (Ordered)" or "Random" hue assignment.
+    - Apply Color To (required): "All (Fill and Outline)", "Fill Only", or
+      "Outline/Stroke Only".
+    - Color Saturation % (optional, default 80): controls color intensity.
+    - Minimum Color Separation in degrees (optional, default 30): minimum
+      hue spacing on the color wheel between assigned colors.
+
+OUTPUTS:
+    No new files are created; the symbology of each input layer is updated
+    in place in the current map, and progress/results are reported via
+    ArcGIS messages.
+================================================================================
 """
 
 import arcpy
