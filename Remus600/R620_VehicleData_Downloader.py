@@ -25,6 +25,7 @@ import stat
 import threading
 import tkinter as tk
 import importlib
+import importlib.util
 import traceback
 from dataclasses import dataclass
 from tkinter import filedialog, messagebox, ttk
