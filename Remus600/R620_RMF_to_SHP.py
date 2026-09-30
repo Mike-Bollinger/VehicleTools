@@ -1,6 +1,21 @@
 """
 REMUS 600 RMF Mission File Parser and Shapefile Generator
 Parses RMF mission files and creates GIS-compatible shapefiles with visualization.
+
+Author: Mike Bollinger
+Last Updated: 2026-07-22
+
+USAGE:
+    Run the script and use the Tkinter GUI to select an RMF mission file and
+    an output folder:
+        python R620_RMF_to_SHP.py
+
+INPUTS:
+    - A REMUS 600 .RMF mission file selected via the GUI.
+
+OUTPUTS:
+    Shapefile(s) representing the mission's planned waypoints/track, saved to
+    the chosen output folder, plus an in-app matplotlib preview plot.
 """
 
 import re

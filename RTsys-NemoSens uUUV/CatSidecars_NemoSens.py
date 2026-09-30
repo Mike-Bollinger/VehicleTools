@@ -1,3 +1,35 @@
+"""
+Title: NemoSens Sidecar CSV Concatenator and Shapefile Builder
+Author: Mike Bollinger
+Last Updated: 2025
+
+FUNCTION:
+    Provides a Tkinter GUI to concatenate the per-image sidecar metadata CSV
+    files produced for NemoSens image collections into a single CSV per input
+    folder, then builds a point shapefile from the combined Latitude/Longitude
+    columns.
+
+USAGE:
+    Run the script directly to launch the GUI:
+        python CatSidecars_NemoSens.py
+    Add one or more input folders (each containing per-image sidecar .csv
+    files alongside the matching images), choose an output folder, and click
+    "Run".
+
+INPUTS:
+    - One or more input folders selected via the GUI, each containing
+      per-image sidecar CSV files (headers: Date, Time, Latitude, Longitude,
+      Depth, Altitude, Pitch, Roll, Heading, Timestamp Source, Light Mode,
+      Exposure, Gain, Focal Length, Aperture) and the corresponding image
+      files (.jpg/.jpeg/.tiff/.tif).
+    - Output folder selected via the GUI.
+
+OUTPUTS:
+    For each input folder, a "<parent_folder>_imagemetadata.csv" combining all
+    sidecar rows plus source_file/image_path columns, and a matching
+    "<parent_folder>_imagemetadata.shp" point shapefile (EPSG:4326).
+"""
+
 import os
 import pandas as pd
 import geopandas as gpd

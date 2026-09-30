@@ -1,3 +1,26 @@
+# Title: Remus Navigation TXT to Formatted CSV Converter (Script2, R version)
+# Author: Mike Bollinger
+# Last Updated: 2024-06-23
+#
+# FUNCTION:
+#   Reads a single Remus vehicle navigation text log, parses the combined
+#   Lon/Lat DMS field into decimal-degree Latitude/Longitude columns, sorts
+#   by timestamp, and writes a formatted CSV ready for
+#   Script3_CreateAUVTrackLines_MB.py.
+#
+# USAGE:
+#   Edit MainFolder and DiveNum below to point at your dive's Vehicle_Data
+#   folder, then run the script in R/RStudio.
+#
+# INPUTS:
+#   - NavFile: "<MainFolder>/<DiveNum>/Vehicle_Data/<DiveNum>_Veh_Data.txt",
+#     a comma-delimited nav log with a header row (skip=1 applied to skip
+#     a leading line).
+#
+# OUTPUTS:
+#   A formatted navigation CSV with decimal-degree Latitude_dd/Longitude_dd
+#   columns, written for downstream shapefile creation.
+
 MainFolder<-"E:\\OR-24-01_VoyisSeaTrial"  #Change path according to your set up
 DiveNum <- "DIVE015" #Change Dive ID for each run
 

@@ -1,6 +1,9 @@
 """
 R620_VehicleData_Downloader
 
+Author: Mike Bollinger
+Last Updated: 2026-07-17
+
 What this does:
 - Connects to one of multiple AUV SFTP endpoints.
 - Downloads configured files/directories from the SFTP server.
@@ -8,6 +11,23 @@ What this does:
   for paths expanded with "latest_day_folder" (e.g. remus_bag_YYYY-MM-DD_HH-MM-SS/).
 - Prefixes each file/folder with: <MissionName>_<DiveName>_
 - Shows transfer progress in a GUI.
+
+USAGE:
+    Edit VEHICLE_CONFIGS below with your vehicles' SFTP host/login/remote
+    paths, then run:
+        python R620_VehicleData_Downloader.py
+    Select a vehicle and destination folder in the GUI, then start the
+    download.
+
+INPUTS:
+    - VEHICLE_CONFIGS (edited in this file): SFTP host, credentials, and
+      remote paths/selectors per vehicle.
+    - A local destination folder selected via the GUI.
+
+OUTPUTS:
+    Downloaded vehicle data files copied to the local destination folder,
+    named with a "<MissionName>_<DiveName>_" prefix, with progress shown in
+    the GUI.
 
 Configuration notes:
 - Edit VEHICLE_CONFIGS below for each vehicle's source list.

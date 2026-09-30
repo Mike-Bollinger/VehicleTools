@@ -35,6 +35,22 @@ Features:
 - Progress tracking and comprehensive logging
 - CSV export for Agisoft reference with depth/altitude/attitude data
 - Agisoft-verified compatibility with proper pitch/roll/heading import
+
+USAGE:
+    Run the script to launch the GUI:
+        python VOYISexifTagImagesWithAttitude.py
+    Select the image folder and the navigation file, configure matching
+    tolerance/CPU cores/safe mode, then run the tagging process.
+
+INPUTS:
+    - A folder of JPEG images to tag.
+    - A navigation file (PHINS INS, NAV_STATE, or DIVE format) containing
+      timestamped position/attitude data.
+
+OUTPUTS:
+    Tagged JPEG images (in place or as backup copies, per safe mode) with
+    EXIF/XMP pitch/roll/heading/GPS/altitude metadata, plus a CSV export of
+    matched nav/attitude data for Agisoft reference.
 """
 
 import os
