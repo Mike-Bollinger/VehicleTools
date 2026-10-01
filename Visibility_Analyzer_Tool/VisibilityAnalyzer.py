@@ -1,7 +1,9 @@
 import os
+# Suppress TensorFlow/oneDNN informational messages before importing TF
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Only show warnings/errors
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # disable oneDNN custom op messages
 import numpy as np
 import tensorflow as tf
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow warnings
 tf.get_logger().setLevel('ERROR')  # Only show errors
 
 # Your existing imports
