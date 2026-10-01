@@ -1,3 +1,28 @@
+"""
+Title: AUV Track Line Shapefile Creator (Script3)
+Author: Mike Bollinger
+Last Updated: 2024-06-23
+
+FUNCTION:
+    Reads a formatted navigation CSV (produced by Script2_CompleteNav_OR2401.R
+    or Script2_NavTXTtoCSV.py) and builds a dissolved polyline shapefile
+    representing the AUV track line for a single dive.
+
+USAGE:
+    Edit the INPUTS section below (dive, prodDir) to match your dataset, then
+    run in the ArcGIS Pro Python environment:
+        python Script3_CreateAUVTrackLines_MB.py
+
+INPUTS:
+    - dive: dive number/name used to locate and label the input CSV.
+    - prodDir: folder containing "<dive>_Veh_Data_Formatted.csv" produced by
+      Script2.
+
+OUTPUTS:
+    A dissolved polyline shapefile ("Dissolved_<dive>.shp") with DIVE and
+    Length_m attributes, written to prodDir.
+"""
+
 import arcpy
 import pandas as pd #import necessary libraries
 import os

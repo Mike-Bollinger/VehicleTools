@@ -10,6 +10,22 @@ Description:
     - Overwrites existing images in the output folder.
     - Handles truncated images and errors gracefully, ensuring uninterrupted execution.
     - Prints a summary of skipped images at the end.
+
+USAGE:
+    Run the script and follow the GUI prompts:
+        python SidecarToExif_NemoSens.py
+    Select the input directory (images + matching sidecar CSVs) then the
+    output directory for tagged images.
+
+INPUTS:
+    - Input directory containing images and matching per-image sidecar CSV
+      files (same base name) with GPS/orientation metadata.
+    - Output directory selected via the GUI.
+
+OUTPUTS:
+    Copies of each input image written to the output directory with EXIF
+    GPS/metadata tags embedded (PNG files are copied without EXIF), plus a
+    printed summary of any skipped images.
 """
 
 from PIL import Image, ImageFile

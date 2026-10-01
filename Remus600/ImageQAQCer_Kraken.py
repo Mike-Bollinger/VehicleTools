@@ -2,6 +2,7 @@
 Title: Synthetic Aperture Sonar Image QAQC Application with GeoTIFF Metadata Display
 Author: Mike Bollinger with contributions from CoPilot
 Date: 2025-08-26
+Last Updated: 2025-08-26
 Version: 2.0
 
 Description:
@@ -13,6 +14,18 @@ Users can navigate through the images with play, pause, forward, and backward co
 
 The application includes a slider to manually navigate between images, and it plots the GPS 
 bounding boxes on a matplotlib plot.
+
+USAGE:
+    python ImageQAQCer_Kraken.py
+    Select a folder of SAS GeoTIFF images in the dialog that appears.
+
+INPUTS:
+    - A folder of GeoTIFF images with embedded/associated geospatial metadata
+      (coordinate system, bounds, pixel size, creation date). Requires rasterio
+      and/or GDAL for full metadata support.
+
+OUTPUTS:
+    An interactive Tkinter window only; no files are created or modified.
 """
 import os
 import tkinter as tk

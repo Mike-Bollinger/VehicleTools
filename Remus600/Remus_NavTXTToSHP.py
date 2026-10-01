@@ -1,3 +1,29 @@
+"""
+Title: Remus Navigation TXT to CSV and Shapefile Converter
+Author: Mike Bollinger
+Last Updated: 2025-09-17
+
+FUNCTION:
+    Reads a Remus vehicle navigation text log (comma-delimited with header
+    and units lines), auto-detects Time/Date/Lon-Lat columns, converts
+    DMS coordinates to decimal degrees, and produces a formatted CSV plus a
+    dissolved polyline shapefile (track line) per dive via a Tkinter GUI.
+
+USAGE:
+    Run the script and use the GUI to select input nav file(s) and a
+    destination folder:
+        python Remus_NavTXTToSHP.py
+
+INPUTS:
+    - One or more Remus navigation .txt log files (header row + units row +
+      data rows) selected via the GUI.
+    - Destination folder for outputs, selected via the GUI.
+
+OUTPUTS:
+    Per dive: a formatted navigation CSV and a dissolved polyline shapefile
+    (with DIVE and Length_m attributes) written to the destination folder.
+"""
+
 import os
 import pandas as pd
 import arcpy

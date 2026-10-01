@@ -1,3 +1,27 @@
+"""
+SAS RASTER FILE TOOLS - ARCGIS PRO PYTHON TOOLBOX
+
+Author: Mike Bollinger
+Last Updated: 2025-07-26
+
+FUNCTION:
+    Copies or moves synthetic aperture sonar (SAS) raster files to a new
+    directory from within ArcGIS Pro.
+
+USAGE:
+    Load this .pyt in ArcGIS Pro's Geoprocessing pane (Toolboxes > Add Toolbox),
+    then run the "SAS Move Raster Files" tool. To move (not copy) files,
+    remove them from the Table of Contents first.
+
+INPUTS:
+    - Input Raster Layers (multi-value, required): raster layers to copy or
+      move.
+    - Destination folder and copy/move mode (see tool parameters).
+
+OUTPUTS:
+    Raster file(s) copied or moved to the destination folder.
+"""
+
 import arcpy
 import os
 import shutil

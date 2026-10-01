@@ -17,6 +17,33 @@
 #                    prompt if password is missing or null.               #
 # v1.4.3, May 2020 - Added log in option to leverage ArcGIS Pro account.  #
 ###########################################################################
+#
+# Last Updated: 2025-06-04
+#
+# FUNCTION:
+#   Overwrites an existing ArcGIS Online/Enterprise Hosted Feature Service
+#   with new data matching the schema used at initial publication, or simply
+#   "touches" the Service (and any related Views) to refresh its last
+#   modified date when no update file is supplied.
+#
+# USAGE:
+#   Import and call overwriteFeatureService() from another script (e.g. via
+#   the 'arcgis' Python API), or run this file directly for ad hoc testing.
+#
+# INPUTS:
+#   - item (required): the 'arcgis.gis.item' Item object for the Hosted
+#     Feature Service to update.
+#   - updateFile (optional): local file path or URL of replacement data
+#     matching the Service's original publish schema.
+#   - touchItems (optional, default True): also refresh last-modified date
+#     of the Service and any related View items.
+#   - verbose (optional, default False): print progress/results to console.
+#
+# OUTPUTS:
+#   A dictionary with keys 'success' (bool) and 'items' (list of dicts
+#   describing each Service/View item acted on and its result). Raises an
+#   Exception on critical failures.
+###########################################################################
 
 import os, sys, datetime, tempfile
 import configparser

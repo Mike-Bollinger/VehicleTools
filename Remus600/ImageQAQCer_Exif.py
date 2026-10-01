@@ -2,6 +2,7 @@
 Title: Image QAQC Application with EXIF Metadata Display
 Author: Mike Bollinger with contributions from ChatGPT
 Date: 2024-10-09
+Last Updated: 2025-08-26
 Version: 1.0
 
 Description:
@@ -10,6 +11,17 @@ The sidebar includes fields such as date, time, exposure time, subject distance,
 Users can navigate through the images with play, pause, forward, and backward controls.
 
 The application also includes a slider to manually navigate between images, and it plots the GPS locations on a matplotlib plot.
+
+USAGE:
+    python ImageQAQCer_Exif.py
+    Select a folder of images (with EXIF GPS/metadata) in the dialog that appears.
+
+INPUTS:
+    - A folder of JPEG/TIFF images containing EXIF metadata (date, time,
+      exposure, subject distance, GPS latitude/longitude, altitude).
+
+OUTPUTS:
+    An interactive Tkinter window only; no files are created or modified.
 """
 import os
 import tkinter as tk

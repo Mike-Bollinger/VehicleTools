@@ -1,3 +1,32 @@
+"""
+Title: VOYIS Nav/Attitude to Agisoft Metashape CSV Merger
+Author: Mike Bollinger
+Last Updated: 2026-06-18
+
+FUNCTION:
+    Matches JPEG images to the nearest-in-time navigation record (by
+    filename timestamp) and exports a Metashape-ready CSV with per-image
+    Latitude, Longitude, Depth, Altitude, Pitch, Roll, and Heading.
+
+USAGE:
+    Run the script to launch the Tkinter GUI:
+        python VOYISmergeAttitude_for_agisoft
+    Select the image folder, the navigation CSV, and an output folder, then
+    run the merge.
+
+INPUTS:
+    - Image folder containing JPEGs named with an embedded timestamp
+      (e.g. "...2026-06-13T034325.017982...").
+    - Navigation CSV with Date, Time, Lon/Lat, Altitude, Heading, Pitch,
+      Roll, and Depth (or "Depth of vehicle") columns.
+    - Output folder selected via the GUI.
+
+OUTPUTS:
+    "Metashape_Import_Nav.csv" in the output folder, containing one row per
+    matched image with Latitude, Longitude, Depth (negative), Altitude
+    (positive), Pitch, Roll, and Heading.
+"""
+
 import os
 import re
 import tkinter as tk

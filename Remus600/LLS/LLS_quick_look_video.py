@@ -1,6 +1,9 @@
 """
 LLS_quick_look_video.py
 ------------------
+Author: Mike Bollinger
+Last Updated: 2026-06-10
+
 Reads one or more LLS .xyz files and produces a video per file with three subplots per frame:
   Front View  ->  X vs Z
   Side View   ->  Y vs Z
@@ -8,6 +11,18 @@ Reads one or more LLS .xyz files and produces a video per file with three subplo
 Points are coloured by intensity (red = low, blue = high).
 Points below INTENSITY_THRESHOLD are excluded from all views.
 Every Nth unique timestamp becomes one frame; axes are fixed from the full dataset.
+
+USAGE:
+    python LLS_quick_look_video.py
+    A settings dialog opens to select input .xyz file(s), output directory,
+    intensity threshold, frame stride, and FPS.
+
+INPUTS:
+    - One or more LLS .xyz point cloud files (X, Y, Z, intensity, timestamp).
+
+OUTPUTS:
+    One quick-look video (.mp4) per input file, written to the chosen output
+    directory.
 """
 
 import os

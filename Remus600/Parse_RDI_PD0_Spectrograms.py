@@ -2,6 +2,9 @@
 """
 Parse Teledyne RDI-style PD0 binary logs and generate echograms.
 
+Author: Mike Bollinger
+Last Updated: 2026-06-07
+
 This script focuses on common PD0 data blocks:
 - Fixed Leader (0x0000)
 - Variable Leader (0x0080)
@@ -13,6 +16,20 @@ This script focuses on common PD0 data blocks:
 
 It estimates sampling rate from timestamps when possible, otherwise from fixed
 leader timing fields.
+
+USAGE:
+    python Parse_RDI_PD0_Spectrograms.py <path_to_pd0_file> [options]
+    Run with --help to see all command-line options, or run without
+    arguments to be prompted via a file-selection dialog (if tkinter is
+    available).
+
+INPUTS:
+    - A Teledyne RDI PD0 binary ADCP log file.
+
+OUTPUTS:
+    Spectrogram/echogram plot(s) (displayed and/or saved as image files) and
+    optional CSV/JSON exports of the parsed data blocks, depending on the
+    command-line options used.
 """
 
 from __future__ import annotations
