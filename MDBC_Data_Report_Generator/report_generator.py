@@ -27,7 +27,7 @@ class ReportGenerator:
             
             # Image Summary Section
             'image_top_highlights': 'Example images from {dive_name}.',
-            'image_altitude_histogram': 'Histogram of altitudes of images between 0-50 meters on {dive_name}.',
+            'image_altitude_histogram': 'Histogram of altitudes of images between 0-50 m on {dive_name}.',
             
             # Overlap Section
             'image_overall_overlap_map': 'Image overlap count for images below altitude threshold for all of {dive_name}.',
@@ -36,15 +36,16 @@ class ReportGenerator:
             'image_visibility_analysis': 'Results from the visibility analysis for {dive_name}. Example images are what the model considered the best example from each category.',
             
             # LLS Section
-            'lls_auv_dive_profile': 'Plot showing AUV dive profile (dashed line), overlaid with indicators of good (green) and bad (orange) data from the laser scan (note dashed line may not be visible when indicators are shown) , based on agreement between AUV echo sounder and laser scan depth measurements. The seafloor is represented by a solid black line. ',
-            'lls_auv_position': 'AUV track and laser scan coverage where green denotes good laser scan data reaching the seafloor, and red areas are where the laser scan did not reach the seafloor.',
-            'lls_auv_depth_vs_intensity': 'Laser intensity values for scans that reach the seafloor, shown as a histogram and as intensity vs depth.',
+            'lls_auv_gps_quality': 'Offset between Phins INS navigation solution and GPS data plotted as a time since surface at the end of dive. Red data show low GPS quality with no correction, and blue data show increased data quality with differential correction. Error is calculated based on the offset in the first 5 minutes from when the AUV surfaced.',
+            'lls_auv_dive_profile': 'Plot showing AUV dive profile (dashed line), overlaid with indicators of good (green) and bad (orange) data from the laser scan (note: dashed line may not be visible when indicators are shown), based on agreement between AUV altimeter and laser scan depth measurements. The seafloor is represented by a solid black line. ',
+            'lls_auv_position': 'AUV track and laser scan coverage where green denotes good laser scan data reaching the seafloor, and orange areas are where the laser scan did not reach the seafloor.',
+            'lls_auv_depth_vs_intensity': 'Laser intensity values for scans that reach the seafloor, shown as a histogram and as intensity vs. depth.',
             'lls_auv_position_depth_color': 'Map of good data colored based on water depth. The black line shows the complete AUV track.',
-            'lls_auv_position_depth_deviation_color': 'Map showing bottom deviations from a spatially averaged depth across 5m. Red positive values indicate emergent objects such as boulders and reefs, and blue negative values indicate dropoffs or low points in the seafloor. The black line shows the complete AUV track.',
+            'lls_auv_position_depth_deviation_color': 'Map showing bottom deviations from a spatially averaged depth across 5 m. Red positive values indicate emergent objects such as boulders and reefs, and blue negative values indicate drop-offs or low points in the seafloor. The black line shows the complete AUV track.',
             'lls_auv_position_intensity_color': 'Map showing the return laser reflectance intensity for good data. Large values are associated with strong returns in good water clarity, or objects with high reflectance such as hard bottom and low values indicate poor visibility or low reflectance from the seafloor. The black line shows the complete AUV track.',
 
             # Maps added programmatically (not matched by filename)
-            'altitude_map': 'Map of the AUV path for {dive_name}. The location of the dive site relative to key bottom features is shown by the red extent indicator on the inset map. Altitude for acquired images is shown by color indicating too low (<4) in yellow, optimal altitude in orange, and too high (> 8m) in violet. When no images were taken, the trackline of the AUV is shown as a black line. The start and end of the trackline are labeled. Depth isobaths are shown in meters.',
+            'altitude_map': 'Map of the AUV path for {dive_name}. The location of the dive site relative to key bottom features is shown by the red extent indicator on the inset map. Altitude for acquired images is shown by color indicating too low (<4) in yellow, optimal altitude in orange, and too high (>8 m) in violet. When no images were taken, the trackline of the AUV is shown as a black line. The start and end of the trackline are labeled. Depth isobaths are shown in meters.',
             'visibility_map': 'Map of the AUV path for {dive_name}. The location of the dive site relative to key bottom features is shown by the red extent indicator on the inset map. Visibility analysis based on a machine learning model is shown by color with dark green circles indicating "excellent visibility," light green circles indicating "good visibility," yellow circles indicating "fair visibility," orange circles indicating "poor visibility," and red circles indicating "zero visibility." Not all visibility categories are found on every dive. When no images were taken, the trackline of the AUV is shown as a black line. The start and end of the trackline are labeled. Depth isobaths are shown in meters.',
             'section3_highlights': 'Example images from {dive_name}. These images represent both highlights and a diversity of bottom types encountered on this dive.',
             'lls_placeholder': 'Example point cloud from {dive_name}. The point cloud represents some of the more prominent features of the dive.'
