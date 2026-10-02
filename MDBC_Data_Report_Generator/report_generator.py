@@ -23,7 +23,7 @@ class ReportGenerator:
         # Order matters - these define the sequence plots appear in the report
         self.caption_mapping = {
             # Navigation and Motion Analysis
-            'nav_motion_analysis': 'Plots showing summaries of AUV navigation and attitude data for {dive_name}. Plots showing summaries of AUV navigation and attitude data for DIVE002. Plots show heave, pitch and roll by geographic coordinates (Row 1), by time (Row 2) and by counts (Row 3). Row 4 shows vehicle crab angle (°), and geographic coordinates by depth (m). Vehicle axes of orientation are pitch positive=nose down, roll positive=starboard, heave positive = up.',
+            'nav_motion_analysis': 'Plots showing summaries of AUV navigation and attitude data for {dive_name}. Plots show heave, pitch, and roll by geographic coordinates (Row 1), by time (Row 2), and by counts (Row 3). Row 4 shows vehicle crab angle (°) and geographic coordinates by depth (m). Vehicle axes of orientation are pitch positive = nose down, roll positive = starboard, heave positive = up.',
             
             # Image Summary Section
             'image_top_highlights': 'Example images from {dive_name}.',
@@ -45,7 +45,7 @@ class ReportGenerator:
 
             # Maps added programmatically (not matched by filename)
             'altitude_map': 'Map of the AUV path for {dive_name}. The location of the dive site relative to key bottom features is shown by the red extent indicator on the inset map. Altitude for acquired images is shown by color indicating too low (<4) in yellow, optimal altitude in orange, and too high (> 8m) in violet. When no images were taken, the trackline of the AUV is shown as a black line. The start and end of the trackline are labeled. Depth isobaths are shown in meters.',
-            'visibility_map': 'Map of the AUV path for {dive_name}. The location of the dive site relative to key bottom features is shown by the red extent indicator on the inset map. Visibility analysis based on a machine learning model is shown by color with dark green circles indicating "excellent visibility," light green circles indicating "good visibility," yellow circles indicating "fair visibility," orange circles indicating "poor visibility," and red circles indicating "zero visibility." Not all visibility categories are found on every dive. When no images were taken, the trackline of the AUV is shown as a black line. The start and end of the trackline are labeled. Depth isobaths are shown in meters.',
+            'visibility_map': 'Map of the AUV path for {dive_name}. The location of the dive site relative to key bottom features is shown by the red extent indicator on the inset map. Visibility analysis based on a machine learning model is shown by color with dark green circles indicating “excellent visibility,” light green circles indicating “good visibility,” yellow circles indicating “fair visibility,” orange circles indicating “poor visibility,” and red circles indicating “zero visibility.” Not all visibility categories are found on every dive. When no images were taken, the trackline of the AUV is shown as a black line. The start and end of the trackline are labeled. Depth isobaths are shown in meters.',
             'section3_highlights': 'Example images from {dive_name}. These images represent both highlights and a diversity of bottom types encountered on this dive.',
             'lls_placeholder': 'Example point cloud from {dive_name}. The point cloud represents some of the more prominent features of the dive.'
         }
