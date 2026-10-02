@@ -6,11 +6,15 @@ Last Updated: 2025-12-09
 Version: 1.0
 
 Description:
-    This script converts PHINS Standard v2 binary navigation files to CSV and ESRI shapefiles.
-    The PHINS (Photonics Inertial Navigation System) from iXBlue/Exail outputs navigation data
-    in a binary format that needs to be parsed and converted for GIS analysis.
-    
-    PHINS Standard v2 Format:
+    This script converts PHINS logs using the proprietary 'IX'-header binary
+    message format (STX/MSG_ID/LENGTH/PAYLOAD/CHECKSUM) to CSV and ESRI
+    shapefiles. NOTE: Real-world PHINS Standard v2 output from iXBlue/Exail
+    C7 units is often NMEA-0183-style ASCII sentences (e.g. $HEHDT,
+    $PIXSE,POSITI) embedded in a .bin file, not this binary structure. If
+    this script reports "File appears to contain ASCII/NMEA data", use
+    Remus_PHINS_StdV2_ToSHP.py instead.
+
+    PHINS Standard v2 Format (this script):
     - Binary format with specific message structures
     - Contains INS (Inertial Navigation System) data
     - Includes position, attitude, velocity, and status information
