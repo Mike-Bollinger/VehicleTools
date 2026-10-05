@@ -195,9 +195,29 @@ output_data['custom_field'] = nav_data.get('custom_field', 0.0)
 - **Binary protocol**: Proprietary format, documentation available from manufacturer
 - **Similar tool**: See `Remus_NavTXTToSHP.py` for text-based navigation parsing
 
+## Two PHINS File Variants
+
+In practice, iXBlue/Exail PHINS units are seen producing **two different**
+`.bin` layouts, and each needs its own script:
+
+| Script | File layout | Sentence example |
+|---|---|---|
+| `Remus_PHINS_BinaryToSHP.py` | Proprietary `IX`-header binary messages (STX/MSG_ID/LENGTH/PAYLOAD/CHECKSUM) | raw bytes, no `$` text |
+| `Remus_PHINS_StdV2_ToSHP.py` | NMEA-0183-style ASCII sentences with embedded null-byte padding | `$HEHDT,22.78162,T*15`, `$PIXSE,POSITI,...` |
+
+If `Remus_PHINS_BinaryToSHP.py` prints `WARNING: File appears to contain
+ASCII/NMEA data!`, use `Remus_PHINS_StdV2_ToSHP.py` on that file instead. It
+parses `$HEHDT` (heading), `$PIXSE,ATITUD` (roll/pitch), `$PIXSE,POSITI`
+(lat/lon/altitude), `$PIXSE,DEPIN_` (depth), `$PIXSE,LOGDVL` (altitude above
+bottom) and `$PIXSE,TIME__` (timestamp) sentences, interpolates them onto the
+position timestamps, and writes the same CSV/shapefile outputs described
+above.
+
 ## Version History
 
 - **v1.0** (2025-12-08): Initial release
+- **v1.1** (2026-09-30): Added `Remus_PHINS_StdV2_ToSHP.py` for the NMEA-style
+  PHINS Standard v2 variant
   - Basic PHINS Standard v2 parsing
   - GUI for batch processing
   - CSV and shapefile output

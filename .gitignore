@@ -20,3 +20,5 @@ VehicleGISTools/__pycache__/PowerRename_ArcGIS.cpython-311.pyc
 VehicleGISTools/PowerRename_ArcGIS.pyt.xml
 .vscode/settings.json
 VehicleGISTools/NorthAmerica_Boundaries/
+*.pyc
+
