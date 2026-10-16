@@ -53,14 +53,12 @@ class FOVCalculatorGUI:
                 "VerticalOverlap": 75,
                 "ImageSize": 10  # MB estimate
             },
-            "Micro UUV 12MP": {
-                "DFOV": 51,
-                "HFOV": "x",
-                "VFOV": "x",
+            "NemoSens UUV Swordfish 12MP": {
+                "DFOV": 52,
+                "HFOV": 45,
+                "VFOV": 35,
                 "ImageColumns": 4096,
                 "ImageRows": 3000,
-                "SensorWidth": 14.10,
-                "SensorHeight": 10.30,
                 "HorizontalOverlap": 80,
                 "VerticalOverlap": 80,
                 "ImageSize": 15  # MB estimate
@@ -117,6 +115,39 @@ class FOVCalculatorGUI:
                 "HorizontalOverlap": 75,
                 "VerticalOverlap": 80,
                 "ImageSize": 20  # MB estimate (20MP JPEG+RAW)
+            },
+            "DWE Explore HD": {
+                "DFOV": 88,
+                "HFOV": 82,
+                "VFOV": 47,
+                "ImageColumns": 1920,
+                "ImageRows": 1080,
+                "f": 2.65,  # Equivalent focal length
+                "HorizontalOverlap": 75,
+                "VerticalOverlap": 80,
+                "ImageSize": 3  # MB estimate (20MP JPEG+RAW)
+            },
+            "Hydrus": {
+                "DFOV": "x",
+                "HFOV": 83,
+                "VFOV": 66,
+                "ImageColumns": 4056,
+                "ImageRows": 3040,
+                "f": 2.8,  # Equivalent focal length
+                "HorizontalOverlap": 75,
+                "VerticalOverlap": 80,
+                "ImageSize": 12  # MB estimate (20MP JPEG+RAW)
+            },
+            "ProSquid 3 (estimate)": {
+                "DFOV": 71,
+                "HFOV": 60,
+                "VFOV": 47,
+                "ImageColumns": 1920,
+                "ImageRows": 1080,
+                "f": 2.8,  # Equivalent focal length
+                "HorizontalOverlap": 75,
+                "VerticalOverlap": 80,
+                "ImageSize": 3  # MB estimate (20MP JPEG+RAW)
             }
         }
         
@@ -303,6 +334,8 @@ class FOVCalculatorGUI:
             
             if desired_speed_knots <= 0:
                 raise ValueError("Speed must be positive")
+            if frame_rate <= 0 or distance_off_seafloor <= 0:
+                raise ValueError("Frame rate and altitude must be positive values")
             
             # Convert speed from knots to m/s
             desired_speed_ms = desired_speed_knots / 1.9438444924406
@@ -334,6 +367,9 @@ class FOVCalculatorGUI:
             vlap = desired_speed_ms / frame_rate
             overlap_fraction = 1 - (vlap / vsamp)
             resulting_overlap = overlap_fraction * 100
+            hsamp = 2 * dx * math.tan(self.deg2rad(HFOV/2))
+            footprint_area = hsamp * vsamp
+            unique_footprint_area = hsamp * min(vlap, vsamp)
             
             # Update the vertical overlap field
             self.vertical_overlap_var.set(f"{resulting_overlap:.1f}")
@@ -355,6 +391,9 @@ CALCULATION RESULTS:
 Vertical Coverage: {vsamp:.2f} m
 Distance per frame: {vlap:.2f} m
 Resulting Vertical Overlap: {resulting_overlap:.1f}%
+Image Seafloor Footprint (width x length): {hsamp:.2f} m x {vsamp:.2f} m
+Image Seafloor Footprint Area: {footprint_area:.2f} m²
+Unique Footprint Area per Subsequent Frame: {unique_footprint_area:.2f} m²
 
 STATUS:
 ═══════════════════════════════════════════════════════════"""
@@ -465,7 +504,7 @@ STATUS:
             eff_ah = hsamp * ((100 - horizontal_overlap) / 100)
             eff_av = vsamp * ((100 - vertical_overlap) / 100)
             eff_area = eff_ah * eff_av
-            photos_1000m2 = 1000 / eff_area
+            photos_1000m2 = 1000 / eff_area if eff_area > 0 else math.inf
             storage_mb = photos_1000m2 * image_size
             storage_gb = storage_mb / 1000
             
@@ -497,6 +536,12 @@ STATUS:
                       hsamp, vsamp, ground_res, focal_length, hlap, max_speed_ms,
                       max_speed_knots, photos_1000m2, storage_gb, image_size):
         """Format calculation results for display"""
+        footprint_area = hsamp * vsamp
+        unique_footprint_area = footprint_area * (1 - vertical_overlap / 100)
+        photos_needed = (math.ceil(photos_1000m2) if math.isfinite(photos_1000m2)
+                         else "Not achievable at 100% overlap")
+        storage_required = (f"{math.ceil(storage_gb)} GB" if math.isfinite(storage_gb)
+                            else "Not achievable at 100% overlap")
         
         results = f"""╔═══════════════════════════════════════════════════════════╗
 ║                   FOV CALCULATION RESULTS                ║
@@ -520,6 +565,9 @@ COVERAGE:
 ═══════════════════════════════════════════════════════════
 Horizontal Coverage: {hsamp:.2f} m
 Vertical Coverage: {vsamp:.2f} m
+Image Seafloor Footprint (width x length): {hsamp:.2f} m x {vsamp:.2f} m
+Image Seafloor Footprint Area: {footprint_area:.2f} m²
+Unique Footprint Area per Subsequent Frame: {unique_footprint_area:.2f} m²
 Ground Resolution: {ground_res*1000:.3f} mm/pixel
 
 MISSION PLANNING:
@@ -529,8 +577,8 @@ Max Speed: {max_speed_ms:.2f} m/s ({max_speed_knots:.2f} knots)
 
 AREA COVERAGE (1000 m²):
 ═══════════════════════════════════════════════════════════
-Photos needed: {math.ceil(photos_1000m2)}
-Storage required: {math.ceil(storage_gb)} GB"""
+Photos needed: {photos_needed}
+Storage required: {storage_required}"""
 
         if focal_length is not None:
             results += f"\n\nESTIMATED FOCAL LENGTH: {focal_length:.2f} mm"

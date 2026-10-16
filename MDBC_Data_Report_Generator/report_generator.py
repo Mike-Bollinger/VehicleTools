@@ -651,6 +651,8 @@ class ReportGenerator:
         """
         # Start at 2 since map is Figure A#.1
         figure_counter = 2
+        # Subsection counter for headings (A.{dive_number}.1, .2, .3, ...)
+        subsection_counter = 1
         
         # Define the exact order of content
         ordered_items = [
@@ -688,7 +690,8 @@ class ReportGenerator:
         
         for item_key, item_type, item_title in ordered_items:
             if item_type == 'heading':
-                doc.add_heading(item_title, level=3)
+                doc.add_heading(f"A.{dive_number}.{subsection_counter} {item_title}", level=3)
+                subsection_counter += 1
                 
             elif item_type == 'metrics':
                 # Look for metrics file in report_plots_path

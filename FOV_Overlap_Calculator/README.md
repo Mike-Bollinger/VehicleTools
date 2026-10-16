@@ -76,10 +76,25 @@ When you select a different camera, the default altitude and frame rate values w
 
 The calculator provides comprehensive information including:
 - Coverage dimensions at specified altitude
+- Image seafloor footprint: width x length in meters and total area in square meters
+- Unique footprint area added by each subsequent frame, excluding overlap with the previous frame
 - Ground resolution (mm/pixel)
 - Mission planning parameters (line spacing, maximum speed)
 - Storage requirements for area coverage
 - Technical camera specifications used in calculations
+
+Both calculation modes report footprint dimensions and areas. The full image area is
+width x length. Unique area is full image area x (1 - vertical overlap / 100).
+In speed-based planning, unique area is capped at the full image area when frames
+have gaps between them; those gaps are not counted as imaged seafloor.
+
+These estimates assume a downward-looking camera over flat seafloor with constant
+altitude and orientation, traveling straight along the image's vertical axis.
+The first frame contributes its full footprint. Subsequent-frame unique area only
+excludes the previous frame, not adjacent survey lines or earlier passes.
+Horizontal overlap still applies to the existing survey-area/storage estimates.
+At 100% overlap, those estimates are reported as not achievable instead of dividing
+by zero.
 
 ## Notes
 
