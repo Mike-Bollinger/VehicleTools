@@ -874,8 +874,12 @@ class R620VehicleDataDownloaderApp:
             local_subdir = output_dir
             local_name = f"{prefix}_{posixpath.basename(remote_file)}"
 
-        local_path = os.path.join(local_subdir, local_name)
         remote_size, remote_mtime = self._remote_file_info(sftp, remote_file)
+
+        if not anchor and posixpath.basename(remote_file).lower() == "phins_std.log":
+            local_name = self._phins_std_log_name(prefix, remote_mtime)
+
+        local_path = os.path.join(local_subdir, local_name)
 
         if os.path.exists(local_path):
             action, resolved_path = self._resolve_conflict_action(
@@ -942,6 +946,12 @@ class R620VehicleDataDownloaderApp:
             return int(getattr(st, "st_size", 0) or 0), int(getattr(st, "st_mtime", 0) or 0)
         except Exception:
             return 0, 0
+
+    def _phins_std_log_name(self, prefix: str, remote_mtime: int) -> str:
+        """Rename phins_std.log to <prefix>_Phins_std_<server mtime>.bin."""
+        mtime = remote_mtime if remote_mtime > 0 else time.time()
+        stamp = time.strftime("%Y-%m-%d_%H-%M", time.localtime(mtime))
+        return f"{prefix}_Phins_std_{stamp}.bin"
 
     def _resolve_conflict_action(
         self,
