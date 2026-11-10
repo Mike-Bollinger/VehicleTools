@@ -1,0 +1,33 @@
+Open a terminal in the app folder and run:
+pwd
+
+Note the full path it prints. Also check that the virtual environment exists:
+ls .venv/bin/python
+
+Create a launcher file:
+mkdir -p ~/.local/share/applications
+nano ~/.local/share/applications/seatrac-navigation-bridge.desktop
+
+Paste this into the editor. Replace /home/YOURNAME/VehicleTools/BlueROV/SeaTrac_Navigation_Bridge with the full path from step 1:
+[Desktop Entry]
+Type=Application
+Name=SeaTrac Navigation Bridge
+Exec=/home/noaa/VehicleTools/BlueROV/SeaTrac_Navigation_Bridge/.venv/bin/python /home/YOURNAME/VehicleTools/BlueROV/SeaTrac_Navigation_Bridge/main.py
+Path=/home/noaa/VehicleTools/BlueROV/SeaTrac_Navigation_Bridge
+Terminal=false
+Categories=Utility;
+
+In nano, save with Ctrl+O, press Enter, then exit with Ctrl+X.
+chmod +x ~/.local/share/applications/seatrac-navigation-bridge.desktop
+
+Make it executable:
+cp ~/.local/share/applications/seatrac-navigation-bridge.desktop ~/Desktop/
+chmod +x ~/Desktop/seatrac-navigation-bridge.desktop
+
+The app should now appear in your applications menu. Search for SeaTrac Navigation Bridge and launch it.
+
+To also put it on the desktop:
+cp ~/.local/share/applications/seatrac-navigation-bridge.desktop ~/Desktop/
+chmod +x ~/Desktop/seatrac-navigation-bridge.desktop
+
+If prompted, right-click the desktop icon and choose Allow Launching.
